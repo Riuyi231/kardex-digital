@@ -462,7 +462,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.';
+const APP_VERSION = '1.5.1';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -475,6 +475,8 @@ app.listen(PORT, '0.0.0.0', () => {
   setInterval(checkReminders, 5 * 60 * 1000);
   setTimeout(checkReminders, 10 * 1000);
 });
+
+
 
 
 
