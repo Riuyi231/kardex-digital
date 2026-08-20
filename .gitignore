@@ -19,6 +19,10 @@ nexalert-app/android/capacitor-cordova-android-plugins/build/
 reportes-equipos/dist/
 reportes-equipos/out/
 
+# Puppeteer cache
+reportes-equipos/.puppeteer-cache/
+reportes-equipos/.wwebjs_cache/
+
 # Server data
 nexalert-server/data/
 nexalert-server/updates/
@@ -28,3 +32,7 @@ nexalert-server/updates/
 .idea/
 *.swp
 *.swo
+
+# Temp files
+*_tmp-*
+NexGuard_respaldo_*
