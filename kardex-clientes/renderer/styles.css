@@ -1,0 +1,108 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f6fb; color: #1e293b; font-size: 14px;
+}
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; padding: 14px 22px;
+  background: #0f172a; color: #fff;
+}
+.topbar h1 { font-size: 18px; margin: 0; display: flex; align-items: baseline; gap: 10px; }
+.logo-title { color: #38bdf8; letter-spacing: 2px; font-weight: 800; }
+.tagline { font-size: 12px; font-weight: 400; color: #94a3b8; letter-spacing: .3px; }
+.top-actions { display: flex; gap: 10px; }
+main { padding: 20px 22px 60px; max-width: 1240px; margin: 0 auto; }
+.card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px;
+}
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.sum-card { margin-bottom: 0; }
+.sum-label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.sum-value { font-size: 22px; font-weight: 700; margin: 6px 0; color: #0f172a; }
+.sum-month input { margin-top: 4px; }
+.list-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.list-head h3 { margin: 0; margin-right: auto; }
+.list-head input[type="search"] { flex: 1 1 240px; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
+.due-box h3 { margin: 0 0 8px; font-size: 15px; }
+.due-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; margin-bottom: 6px; font-weight: 600; }
+
+.btn {
+  border: 1px solid transparent; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-ghost { background: #fff; color: #334155; border-color: #cbd5e1; }
+.btn-ghost:hover { background: #f1f5f9; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-sm { padding: 5px 9px; font-size: 12px; }
+
+.client-row {
+  display: grid; grid-template-columns: 1.6fr 1fr 1fr .8fr .9fr 130px; gap: 10px; align-items: center;
+  padding: 11px 6px; border-bottom: 1px solid #eef2f7; cursor: pointer;
+}
+.client-row:hover { background: #f8fafc; }
+.client-row .name { font-weight: 700; }
+.client-row .muted, .muted { color: #64748b; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.badge.micro { background: #e0f2fe; color: #0369a1; }
+.badge.pyme { background: #dcfce7; color: #15803d; }
+.badge.empresa { background: #ede9fe; color: #6d28d9; }
+.badge.firma { background: #fef9c3; color: #854d0e; }
+.badge.activo { background: #dcfce7; color: #15803d; }
+.badge.pendiente { background: #fef3c7; color: #b45309; }
+.badge.prospecto { background: #e0f2fe; color: #0369a1; }
+.badge.cortado { background: #fee2e2; color: #b91c1c; }
+.badge.instalacion { background: #f1f5f9; color: #475569; }
+.badge.prueba { background: #dbeafe; color: #1e40af; }
+.badge.vencida { background: #fee2e2; color: #dc2626; }
+.deuda { color: #dc2626; font-weight: 700; }
+.pagado { color: #15803d; font-weight: 700; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .5); display: flex; align-items: flex-start;
+  justify-content: center; padding: 40px 20px; overflow-y: auto; z-index: 50;
+}
+.modal {
+  background: #fff; border-radius: 14px; padding: 22px; width: 100%; max-width: 620px; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.modal.small { max-width: 460px; }
+.modal h3 { margin: 0 0 16px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-2 .span-2 { grid-column: span 2; }
+.grid-2 label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: #475569; }
+.grid-2 input, .grid-2 select, .grid-2 textarea {
+  padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: inherit;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.hidden { display: none !important; }
+[hidden] { display: none !important; }
+
+.pay-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 4px; border-bottom: 1px solid #eef2f7; font-size: 13px; }
+.pay-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 14px; }
+.pay-actions { display: flex; gap: 8px; margin-top: 12px; }
+.pay-actions .btn { flex: 1; }
+.pay-summary { margin: 10px 0 4px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; font-size: 13px; }
+
+.rnc-search-row { display: flex; gap: 8px; }
+.rnc-search-row input { flex: 1; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: inherit; }
+.rnc-results { margin-top: 12px; max-height: 380px; overflow-y: auto; }
+.rnc-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid #eef2f7; }
+.rnc-info { font-size: 13px; line-height: 1.5; }
+
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #0f172a; color: #fff;
+  padding: 12px 20px; border-radius: 10px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.3); z-index: 100;
+}
+.toast.error { background: #dc2626; }
+.small { font-size: 12px; }
+
+.serv-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px; background: #f8fafc; }
+.sv-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.sv-row input { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: inherit; }
+.sv-nombre { flex: 2; }
+.sv-cuota { flex: 1; }
+.serv-add-row { display: flex; gap: 8px; margin-top: 8px; }
+.serv-add-row input { flex: 1; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: inherit; }
+.serv-add-row input:first-child { flex: 2; }
+.serv-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

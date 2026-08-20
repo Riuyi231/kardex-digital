@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+*.exe
+*.apk
+*.blockmap
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Android build artifacts
+nexalert-app/android/app/build/
+nexalert-app/android/.gradle/
+nexalert-app/android/build/
+nexalert-app/android/capacitor-cordova-android-plugins/build/
+
+# Desktop build artifacts
+reportes-equipos/dist/
+reportes-equipos/out/
+
+# Server data
+nexalert-server/data/
+nexalert-server/updates/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

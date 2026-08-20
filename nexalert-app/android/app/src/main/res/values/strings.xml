@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NexAlert</string>
+    <string name="title_activity_main">NexAlert</string>
+    <string name="package_name">com.nexus.nexalert</string>
+    <string name="custom_url_scheme">com.nexus.nexalert</string>
+</resources>

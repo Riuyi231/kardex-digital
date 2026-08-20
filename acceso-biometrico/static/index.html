@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexGuard · Control de Acceso</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="logo">🛡️ NexGuard <span>Control de Acceso Facial</span></div>
+  <nav>
+    <button class="tab active" data-tab="cam">📷 Acceso</button>
+    <button class="tab" data-tab="personas">👥 Personas</button>
+    <button class="tab" data-tab="eventos">📋 Eventos</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ CÁMARA ============ -->
+  <section id="view-cam" class="view active">
+    <div class="cam-wrap">
+      <div class="cam-box">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="cam-off" class="cam-off">
+          <p>📷 No se detectó cámara o no diste permiso.</p>
+          <p class="hint">Prueba subiendo una foto para reconocimiento:</p>
+          <label class="btn">📁 Probar con foto
+            <input type="file" id="img-test" accept="image/*" hidden>
+          </label>
+        </div>
+      </div>
+      <div class="status-panel">
+        <div id="st-nombre" class="st-nombre muted">Esperando rostro…</div>
+        <div id="st-detalle" class="st-detalle"></div>
+        <div id="st-alerta" class="st-alerta hidden"></div>
+        <div class="st-actions">
+          <button id="btn-registrar" class="btn big primary" disabled>Registrar Entrada / Salida</button>
+          <label class="auto-label"><input type="checkbox" id="chk-auto"> Registro automático</label>
+          <button id="btn-capturar" class="btn">➕ Capturar nuevo rostro</button>
+        </div>
+        <div class="hint cooldown-note" id="cooldown-note"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PERSONAS ============ -->
+  <section id="view-personas" class="view">
+    <div class="toolbar">
+      <input id="p-search" type="search" placeholder="Buscar persona…">
+      <button id="btn-nueva" class="btn primary">➕ Nueva persona</button>
+    </div>
+    <div id="p-count" class="count"></div>
+    <div id="p-list" class="grid"></div>
+  </section>
+
+  <!-- ============ EVENTOS ============ -->
+  <section id="view-eventos" class="view">
+    <div class="dash-cards">
+      <div class="dash-card"><div class="dc-val" id="d-dentro">0</div><div class="dc-lbl">Dentro ahora</div></div>
+      <div class="dash-card"><div class="dc-val" id="d-entradas">0</div><div class="dc-lbl">Entradas hoy</div></div>
+      <div class="dash-card"><div class="dc-val" id="d-salidas">0</div><div class="dc-lbl">Salidas hoy</div></div>
+      <div class="dash-card warn"><div class="dc-val" id="d-alertas">0</div><div class="dc-lbl">Alertas hoy</div></div>
+    </div>
+    <h3>🟢 Dentro del local ahora</h3>
+    <div id="dentro-list" class="dentro-list"></div>
+    <h3>🕘 Últimos eventos</h3>
+    <div id="ev-list" class="ev-table"></div>
+  </section>
+</main>
+
+<!-- ============ MODAL NUEVA PERSONA ============ -->
+<div id="modal-mask" class="modal-mask hidden">
+  <div class="modal">
+    <h3 id="modal-title">Nueva persona</h3>
+    <div class="modal-body">
+      <label>Nombre *<input id="f-nombre" type="text" placeholder="Nombre"></label>
+      <label>Apellido<input id="f-apellido" type="text" placeholder="Apellido"></label>
+      <label>Cédula<input id="f-cedula" type="text" placeholder="000-0000000-0"></label>
+      <label>Rol
+        <select id="f-rol">
+          <option value="empleado">Empleado</option>
+          <option value="administrador">Administrador</option>
+          <option value="visitante">Visitante</option>
+        </select>
+      </label>
+      <label>Foto del rostro
+        <span class="hint">Puedes capturarla desde la cámara o subir un archivo. Debe verse claro y de frente.</span>
+        <div class="foto-row">
+          <button id="btn-capture2" class="btn" type="button">📷 Capturar de cámara</button>
+          <label class="btn">📁 Subir foto<input type="file" id="f-foto" accept="image/*" hidden></label>
+        </div>
+        <img id="f-preview" class="preview hidden" alt="preview">
+        <input type="hidden" id="f-foto-blob">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-cancel" class="btn">Cancelar</button>
+      <button id="btn-save" class="btn primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

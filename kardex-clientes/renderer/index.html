@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>NEXUS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1><span class="logo-title">NEXUS</span> <small class="tagline" id="topbar-negocio">Nexus Software RD · control de clientes</small></h1>
+    <div class="top-actions">
+      <button class="btn btn-ghost" id="btn-settings">⚙️ Configuración</button>
+      <button class="btn btn-primary" id="btn-add-client">➕ Nuevo cliente</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary">
+      <div class="card sum-card">
+        <div class="sum-label">Ingresos del mes</div>
+        <div class="sum-value" id="s-income-month">—</div>
+        <label class="sum-month"><input type="month" id="s-month" /></label>
+      </div>
+      <div class="card sum-card"><div class="sum-label">Ingresos del año</div><div class="sum-value" id="s-income-year">—</div></div>
+      <div class="card sum-card"><div class="sum-label">Clientes activos</div><div class="sum-value" id="s-active">—</div></div>
+      <div class="card sum-card"><div class="sum-label">Empleados en activo</div><div class="sum-value" id="s-employees">—</div></div>
+      <div class="card sum-card"><div class="sum-label">Proyección anual</div><div class="sum-value" id="s-projection">—</div></div>
+    </section>
+
+    <section class="card due-box" id="due-box" hidden>
+      <h3>⏰ Por cobrar este mes</h3>
+      <div id="due-list"></div>
+    </section>
+
+    <section class="card due-box" id="trial-box" hidden>
+      <h3>🧪 Pruebas vencidas — activar o cortar</h3>
+      <div id="trial-list"></div>
+    </section>
+
+    <section class="card">
+      <div class="list-head">
+        <h3>Mis clientes</h3>
+        <input type="search" id="search" placeholder="Buscar por nombre, RNC, contacto, teléfono, licencia…" />
+        <span id="search-count" class="muted small"></span>
+        <button class="btn btn-ghost" id="btn-rnc">🔎 Buscar en RNC</button>
+        <button class="btn btn-ghost" id="btn-export-csv">⬇ Exportar clientes (Excel)</button>
+        <button class="btn btn-ghost" id="btn-export-payments">⬇ Exportar pagos (Excel)</button>
+      </div>
+      <div id="client-list" class="client-list"></div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="client-modal" hidden>
+    <div class="modal">
+      <h3 id="client-modal-title">Nuevo cliente</h3>
+      <div class="grid-2">
+        <label>Empresa *<input id="f-nombre" placeholder="Nombre de la empresa" /></label>
+        <label>RNC <input id="f-rnc" placeholder="RNC / cédula" /></label>
+        <label>Plan
+          <select id="f-plan">
+            <option value="micro">Micro</option>
+            <option value="pyme">Pyme</option>
+            <option value="empresa">Empresa</option>
+            <option value="firma">Firma</option>
+          </select>
+        </label>
+        <label>Cuota mensual <input id="f-cuota" type="number" min="0" step="100" /></label>
+        <label>Costo de instalación <input id="f-instalacion" type="number" min="0" step="100" placeholder="Único, no es mensualidad" /></label>
+        <label>Empleados actuales <input id="f-empleados" type="number" min="0" /></label>
+        <label>Estado
+          <select id="f-estado">
+            <option value="activo">Activo</option>
+            <option value="prueba">Prueba (15 días)</option>
+            <option value="prospecto">Prospecto</option>
+            <option value="cortado">Cortado</option>
+          </select>
+        </label>
+        <label>Fin de la prueba <input id="f-trial-fin" type="date" /></label>
+        <label>Fecha de inicio <input id="f-inicio" type="date" /></label>
+        <label>Licencia / serial <input id="f-licencia" placeholder="ID de la licencia o archivo .lic" /></label>
+        <label>Contacto <input id="f-contacto" placeholder="Nombre de la persona" /></label>
+        <label>Teléfono <input id="f-telefono" placeholder="Ej: 809-000-0000" /></label>
+        <label>Email <input id="f-email" type="email" placeholder="correo@empresa.com" /></label>
+        <label class="span-2">Dirección <input id="f-direccion" /></label>
+        <div class="span-2 serv-box">
+          <h4 style="margin:0 0 6px">🧩 Programas / servicios</h4>
+          <div id="servicios-list"></div>
+          <div class="serv-add-row">
+            <input id="sv-nombre" placeholder="Nombre del programa (ej: KARDEX Digital, NEXALERT, Capacitación)" />
+            <input id="sv-cuota" type="number" min="0" step="100" placeholder="Cuota RD$" />
+            <button class="btn btn-ghost btn-sm" id="btn-sv-add">➕ Añadir</button>
+          </div>
+          <div class="serv-quick">
+            <button class="btn btn-ghost btn-sm" type="button" data-sv="KARDEX Digital" data-sv-cuota="2500">KARDEX Pyme</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-sv="KARDEX Red" data-sv-cuota="5000">KARDEX Red</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-sv="NEXALERT" data-sv-cuota="1500">NEXALERT</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-sv="Combo KARDEX Pyme + NEXALERT" data-sv-cuota="3500">Combo Pyme + NEXALERT</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-sv="Combo KARDEX Red + NEXALERT" data-sv-cuota="6000">Combo Red + NEXALERT</button>
+          </div>
+          <p class="muted small">Lo que usa/cotizaste a esta empresa. La cuota mensual se sugiere sumando los programas; puedes ajustarla a mano.</p>
+        </div>
+        <label class="span-2">Notas <textarea id="f-notas" rows="2"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-client-cancel">Cancelar</button>
+        <button class="btn btn-danger hidden" id="btn-client-delete">Eliminar</button>
+        <button class="btn btn-primary" id="btn-client-save">Guardar cliente</button>
+      </div>
+      <div id="payments-box" class="hidden" style="margin-top:18px; border-top:1px solid #eef2f7; padding-top:14px">
+        <h4 style="margin:0 0 8px">💵 Pagos</h4>
+        <div id="pay-summary"></div>
+        <div id="pay-list"></div>
+        <div class="pay-actions">
+          <button class="btn btn-primary" id="btn-add-payment">➕ Registrar pago</button>
+          <button class="btn btn-ghost hidden" id="btn-add-instalacion">⚙️ Cobrar instalación</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="payment-modal" hidden>
+    <div class="modal small">
+      <h3>Registrar pago · <span id="pay-client-name"></span></h3>
+      <div class="grid-2">
+        <label>Fecha <input id="p-fecha" type="date" /></label>
+        <label>Monto <input id="p-monto" type="number" min="0" step="100" /></label>
+        <label>Tipo
+          <select id="p-tipo">
+            <option value="mensual">Mensualidad</option>
+            <option value="instalacion">Instalación (única)</option>
+          </select>
+        </label>
+        <label>Método
+          <select id="p-metodo">
+            <option value="transferencia">Transferencia</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="punto">Punto de venta</option>
+            <option value="cheque">Cheque</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label>Meses que cubre <input id="p-meses" type="number" min="1" value="1" /></label>
+        <label class="span-2">Notas <input id="p-notas" placeholder="Opcional" /></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-pay-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-pay-save">Registrar pago</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="config-modal" hidden>
+    <div class="modal">
+      <h3>⚙️ Configuración</h3>
+      <div class="grid-2">
+        <label>Nombre del negocio <input id="cfg-negocio" placeholder="Tu empresa" /></label>
+        <label>Símbolo de moneda <input id="cfg-moneda" value="RD$" /></label>
+        <label>Cuota plan Micro <input id="cfg-micro" type="number" min="0" step="100" /></label>
+        <label>Cuota plan Pyme <input id="cfg-pyme" type="number" min="0" step="100" /></label>
+        <label>Cuota plan Empresa <input id="cfg-empresa" type="number" min="0" step="100" /></label>
+        <label>Cuota plan Firma <input id="cfg-firma" type="number" min="0" step="100" /></label>
+      </div>
+      <p class="muted small">Estas cuotas se sugieren automáticamente al elegir un plan, pero puede cobrar un monto distinto a cada cliente.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-cfg-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-cfg-save">Guardar configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="rnc-modal" hidden>
+    <div class="modal">
+      <h3>🔎 Buscar empresas en RNC (DGII)</h3>
+      <div class="rnc-search-row">
+        <input id="rnc-q" placeholder="Razón social, nombre o RNC (mín. 3 letras)" />
+        <button class="btn btn-primary" id="rnc-search">Buscar</button>
+      </div>
+      <div id="rnc-results" class="rnc-results"></div>
+      <p class="muted small">Datos públicos de la DGII vía servicio en línea. Verifica el contacto antes de ofrecer tu servicio.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="rnc-cancel">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

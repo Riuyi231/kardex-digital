@@ -1,0 +1,13 @@
+{
+  "appId": "com.nexus.nexalert",
+  "appName": "NexAlert",
+  "webDir": "www",
+  "plugins": {
+    "Keyboard": {
+      "resizeOnFullScreen": false
+    },
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
+  }
+}

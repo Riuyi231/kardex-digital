@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>KARDEX Digital · Sistema de Licencias</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; color: #1f2937; margin: 0; padding: 20px 26px; }
+  h1 { font-size: 19px; color: #111827; margin: 0 0 2px; }
+  h2 { font-size: 14px; color: #1d4ed8; margin: 18px 0 6px; border-bottom: 2px solid #dbeafe; padding-bottom: 3px; }
+  h3 { font-size: 12px; color: #111827; margin: 12px 0 4px; }
+  .sub { color: #6b7280; font-size: 11px; margin-bottom: 14px; }
+  .box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #f9fafb; }
+  .warn { border-left: 4px solid #f59e0b; background: #fffbeb; }
+  .info { border-left: 4px solid #3b82f6; background: #eff6ff; }
+  .good { border-left: 4px solid #10b981; background: #ecfdf5; }
+  code, pre { font-family: Consolas, "Courier New", monospace; font-size: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 1px 4px; }
+  pre { padding: 8px 10px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 10.5px; }
+  th, td { border: 1px solid #e5e7eb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .pagebreak { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>KARDEX Digital · Sistema de Licencias</h1>
+<p class="sub">Guía para el vendedor y el usuario final · Versión 1.0</p>
+
+<h2>1. Cómo funciona</h2>
+<p>Cada instalación de KARDEX Digital funciona durante <b>15 días de prueba gratuita</b> (empieza automáticamente en la primera ejecución). Para seguir usándolo hay que <b>activar una licencia</b>. La licencia es una clave firmada digitalmente: no se puede fabricar ni modificar sin la llave privada del vendedor.</p>
+<div class="box">
+  <b>Tipos de licencia</b>
+  <ul style="margin:4px 0 0; padding-left:18px;">
+    <li><b>pyme</b> — para un solo equipo (sin servidor).</li>
+    <li><b>red</b> — para empresas con servidor y varios puestos.</li>
+  </ul>
+  <b>Vigencia</b> — por días (ej. 365) o <b>perpetua</b> (0 días = nunca vence).
+  <br><b>Vinculación</b> — una licencia puede usarse en <b>cualquier PC</b> o quedar <b>atada a una computadora específica</b> (por su ID de máquina).
+</div>
+
+<h2>2. ¿Qué es el ID de máquina?</h2>
+<p>Es un código de 32 caracteres (ej. <code>F24AA38A2A68C7759ECFB7A4DCFC7959</code>) que identifica a cada computadora. Se ve en la ventana de activación (<b>Licencia → Activar licencia</b>). Se calcula del nombre del equipo, usuario y GUID de Windows; no se puede "copiar" de una PC a otra.</p>
+
+<h2>3. Activar una licencia (usuario final)</h2>
+<ol>
+  <li>Abrir KARDEX Digital y hacer clic en <b>Licencia</b> (debajo de la contraseña en el login).</li>
+  <li>Pegar la clave en el cuadro o pulsar <b>Cargar archivo .lic</b>.</li>
+  <li>Pulsar <b>Activar</b>. La clave queda guardada en <code>kardex-license.json</code> junto a la base de datos.</li>
+</ol>
+
+<h2>4. Emitir licencias (solo el vendedor)</h2>
+<div class="good box"><b>Método fácil (recomendado):</b> usa el programa <b>KeyForge</b> (instalador <code>KeyForge-Setup.exe</code>), un generador de licencias genérico que sirve para KARDEX y para cualquier otro programa que fabriques. Es solo para tu uso: seleccionas la llave privada la primera vez, llenas los datos y pulsa <b>Generar licencia</b>. Te deja copiar la clave o guardar el archivo <code>.lic</code>.</div>
+<div class="warn box"><b>IMPORTANTE:</b> la carpeta <code>keys\</code> con <code>vendor-private.pem</code> es la llave maestra. <b>No compartirla ni incluirla en el instalador</b>. Si se pierde, no se pueden emitir más licencias sin reconstruir la app.</div>
+<p>Alternativa por consola o doble clic: <b>Generar-Licencia.bat</b> te pregunta todo paso a paso y deja la licencia en <code>Licencias\</code>. <b>Ver-ID-mi-PC.bat</b> muestra el ID de una computadora.</p>
+<p>Si prefieres la línea de comandos:</p>
+<pre>node scripts/make-license.js --company "EMPRESA S.A." --type red --seats 8 --days 365</pre>
+<p>Esa licencia sirve para <b>cualquier PC</b> (tipo red). Para atarla a una PC concreta:</p>
+<pre>node scripts/make-license.js --company "CLIENTE" --type pyme --seats 1 --days 365 --machine "F24AA38A2A68C7759ECFB7A4DCFC7959"</pre>
+<p>Para generarla atada a la PC donde se corre el comando: usar <code>--machine-this</code>.</p>
+<p>Para guardar la clave en un archivo listo para enviar: agregar <code>--out "ruta\LICENCIA.lic"</code>. El cliente lo carga con <b>Cargar archivo .lic</b>.</p>
+<div class="info box"><b>Nota:</b> la primera vez que se emite una licencia hay que generar el par de llaves con <code>node scripts/make-license-keys.js</code>. Esto crea <code>keys\vendor-private.pem</code> y <code>services\license-pub.js</code>. La llave pública queda embebida en el instalador.</div>
+
+<h2>5. Reemisión y renovación</h2>
+<ul>
+  <li><b>Renovar:</b> emitir una nueva licencia con más días para la misma empresa/máquina; el cliente la activa y sobreescribe la anterior.</li>
+  <li><b>Cambio de PC:</b> si la licencia estaba atada a una máquina, se emite una nueva con el ID de la nueva computadora (el cliente lo lee en la ventana de licencia).</li>
+  <li><b>Restaurar sistema:</b> al instalar Windows de nuevo cambia el ID de máquina; se debe reemitir la licencia con el ID nuevo.</li>
+</ul>
+
+<h2>6. Resolución de problemas</h2>
+<table>
+  <tr><th>Mensaje</th><th>Solución</th></tr>
+  <tr><td>«Licencia no disponible…» al iniciar sesión o como servidor</td><td>La prueba venció y no hay licencia activa. Activar una licencia o renovar la prueba.</td></tr>
+  <tr><td>«La licencia no corresponde a esta computadora»</td><td>La licencia está atada a otro equipo. Verificar el ID de máquina y pedir una licencia nueva.</td></tr>
+  <tr><td>«La licencia está vencida»</td><td>Emitir/activar una licencia renovada.</td></tr>
+  <tr><td>«El archivo de licencia no es válido»</td><td>El archivo está dañado o fue modificado. Reenviar la clave original.</td></tr>
+  <tr><td>La clave no se pega o se ve en blanco</td><td>Copiar la clave completa desde la línea «CLAVE DE LICENCIA» (sin espacios ni saltos).</td></tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "name": "kardex-clientes",
+  "version": "1.0.0",
+  "description": "Control de clientes para el proveedor de servicios KARDEX Digital: empresas, planes, cuotas, empleados y pagos.",
+  "main": "main.js",
+  "author": "",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "logo": "node scripts/make-logo.js",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.15.3",
+    "pngjs": "^7.0.0"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "sql.js": "^1.12.0"
+  },
+  "build": {
+    "appId": "com.nexus.app",
+    "productName": "NEXUS",
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "services/**/*",
+      "renderer/**/*",
+      "build/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "NEXUS",
+      "artifactName": "NEXUS-Setup.exe"
+    },
+    "portable": {
+      "artifactName": "NEXUS-portable.exe"
+    }
+  }
+}

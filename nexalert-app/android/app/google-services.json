@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "664596327278",
+    "project_id": "nexalert-836d1",
+    "storage_bucket": "nexalert-836d1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:664596327278:android:68e2e4cd5ea2f00d41af7f",
+        "android_client_info": {
+          "package_name": "com.nexus.nexalert"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLUViXsnizj6bY7JfdZwdzGl7PYmG894U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Propuesta de Servicios · NEXUS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: A4; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; }
+
+  /* PORTADA */
+  .cover { height: 260mm; background: linear-gradient(150deg, #0f172a 0%, #1e3a8a 100%); color: #fff; padding: 40mm 22mm; page-break-after: always; }
+  .cover .brand { font-size: 30px; font-weight: 800; letter-spacing: 3px; }
+  .cover .brand small { display: block; font-size: 14px; font-weight: 400; letter-spacing: 1px; color: #93c5fd; margin-top: 4px; }
+  .cover h1 { font-size: 40px; line-height: 1.15; margin-top: 46px; }
+  .cover .sub { font-size: 18px; color: #dbeafe; margin-top: 16px; line-height: 1.5; }
+  .cover .meta { position: absolute; bottom: 22mm; font-size: 14px; color: #bfdbfe; }
+  .cover .legal { display: inline-block; margin-top: 26px; background: #f59e0b; color: #0f172a; font-weight: 800; padding: 9px 18px; border-radius: 30px; font-size: 15px; }
+
+  /* CONTENIDO */
+  .page { padding: 14mm 20mm; page-break-after: always; }
+  h2 { font-size: 21px; color: #1e3a8a; margin: 0 0 10px; border-left: 5px solid #2563eb; padding-left: 12px; }
+  .page p, .page li { font-size: 13.5px; line-height: 1.7; color: #334155; text-align: justify; }
+  .page ul { margin: 8px 0 14px 20px; }
+  .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 12px 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .feat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+  .feat b { display: block; color: #0f172a; margin-bottom: 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: #0f172a; color: #fff; text-align: left; padding: 10px 12px; font-size: 13px; }
+  td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13.5px; }
+  .right { text-align: right; }
+  .total td { background: #eff6ff; font-weight: 800; }
+  .timeline { list-style: none; margin: 12px 0; }
+  .timeline li { padding: 8px 0 8px 34px; position: relative; border-left: 2px solid #dbeafe; margin-left: 8px; }
+  .timeline li::before { content: "●"; position: absolute; left: -8px; color: #2563eb; background: #fff; }
+  .sign { display: flex; gap: 40px; margin-top: 60px; }
+  .sign > div { flex: 1; }
+  .sign .line { border-top: 1.5px solid #0f172a; margin-top: 70px; }
+  .sign .name { text-align: center; font-size: 12.5px; color: #475569; margin-top: 8px; line-height: 1.5; }
+  .foot { margin-top: 26px; font-size: 11.5px; color: #94a3b8; text-align: center; }
+</style>
+</head>
+<body>
+
+  <!-- PORTADA -->
+  <div class="cover">
+    <div class="brand">NEXUS<small>Nexus Software RD</small></div>
+    <h1>Propuesta de Servicios<br />Kardex digital y control de empleados</h1>
+    <div class="sub">Una solución completa para mantener tu registro de empleados al día, en cumplimiento con el Ministerio de Trabajo de la República Dominicana.</div>
+    <div class="legal">✔ Cumplimiento Ley 16-92 (Código de Trabajo)</div>
+    <div class="meta">Preparado para: <b>[Nombre de la empresa]</b><br />Fecha: [__/__/____] · Referencia: [NEXUS-00X]</div>
+  </div>
+
+  <!-- 1. NOSOTROS -->
+  <div class="page">
+    <h2>1. Sobre nosotros</h2>
+    <p>Somos <b>Nexus Software RD</b>, una empresa dominicana especializada en sistemas de control de personal y gestión de pagos para PYMES. Nuestro producto, <b>NEXUS</b>, permite a las empresas llevar su registro de empleados (kardex) de forma digital, ordenada y siempre disponible, eliminando el papeleo y el riesgo ante las inspecciones laborales.</p>
+    <div class="box">Nuestro compromiso: que tu empresa cumpla con la ley sin complicaciones y con un costo mensual claro y predecible.</div>
+
+    <h2>2. La necesidad</h2>
+    <p>Toda empresa dominicana que contrate personal está obligada a llevar el registro de sus empleados conforme al <b>Código de Trabajo (Ley 16-92)</b> y las disposiciones del <b>Ministerio de Trabajo</b>. Este registro debe reflejar las altas, bajas, salarios, vacaciones, licencias y demás datos laborales. Cuando se lleva en papel o en hojas de cálculo desordenadas, la empresa está expuesta a multas y complicaciones en cada inspección.</p>
+    <ul>
+      <li>Evita sanciones por falta de registro de personal.</li>
+      <li>Centraliza la información en un solo lugar.</li>
+      <li>Permite responder rápido ante una inspección o un reclamo laboral.</li>
+    </ul>
+
+    <h2>3. Nuestra solución</h2>
+    <p><b>NEXUS</b> es un sistema de kardex digital que organiza la información de tus empleados y además te ayuda a controlar los pagos mensuales del servicio, con recordatorios automáticos y reportes exportables.</p>
+    <div class="grid">
+      <div class="feat"><b>📋 Registro de empleados</b>Altas, bajas, salarios, vacaciones y licencias en un solo lugar.</div>
+      <div class="feat"><b>✅ Cumplimiento laboral</b>Tu kardex listo para el Ministerio de Trabajo.</div>
+      <div class="feat"><b>💵 Control de pagos</b>Control de tu cuota mensual con recordatorios automáticos.</div>
+      <div class="feat"><b>📊 Reportes exportables</b>Excel para tu contabilidad y auditorías.</div>
+      <div class="feat"><b>🔎 Búsqueda rápida</b>Encuentra cualquier dato en segundos.</div>
+      <div class="feat"><b>🛟 Soporte directo</b>Atención por WhatsApp en horario laboral.</div>
+    </div>
+    <div class="foot">Nexus Software RD · Propuesta NEXUS-00X · Página 2</div>
+  </div>
+
+  <!-- 2. ALCANCE E INVERSIÓN -->
+  <div class="page">
+    <h2>4. Alcance del servicio</h2>
+    <ul>
+      <li>Instalación y configuración inicial del sistema.</li>
+      <li>Carga de los datos de tus empleados actuales.</li>
+      <li>Capacitación del personal a cargo.</li>
+      <li>Soporte técnico por WhatsApp en horario laboral.</li>
+      <li>Exportación de reportes (Excel).</li>
+      <li>Control de renovación y recordatorio de pagos.</li>
+    </ul>
+
+    <h2>5. Inversión</h2>
+    <p>Los precios se ajustan según el tamaño de la empresa. Montos en Pesos Dominicanos (RD$).</p>
+    <table>
+      <tr><th>Plan</th><th>Empleados</th><th class="right">Instalación (única)</th><th class="right">Mensualidad</th></tr>
+      <tr><td><b>Micro</b></td><td>Hasta 10</td><td class="right">RD$ [2,000]</td><td class="right">RD$ 2,500</td></tr>
+      <tr><td><b>Pyme</b></td><td>Hasta 50</td><td class="right">RD$ [3,000]</td><td class="right">RD$ 5,000</td></tr>
+      <tr><td><b>Empresa</b></td><td>Ilimitados</td><td class="right">RD$ [5,000]</td><td class="right">RD$ 9,000</td></tr>
+    </table>
+    <div class="box">La instalación es un <b>costo único</b> y no forma parte de la mensualidad. Incluye los primeros 15 días de <b>prueba sin compromiso</b>.</div>
+
+    <h2>6. Implementación</h2>
+    <ul class="timeline">
+      <li><b>Día 1:</b> Firma del acuerdo e instalación del sistema.</li>
+      <li><b>Día 2-4:</b> Carga de empleados y configuración.</li>
+      <li><b>Semana 1:</b> Capacitación del personal.</li>
+      <li><b>En adelante:</b> Soporte continuo y control de pagos mensuales.</li>
+    </ul>
+
+    <h2>7. Soporte y garantía</h2>
+    <p>Incluimos soporte por WhatsApp en horario laboral y un período de prueba de 15 días. Si el servicio no te convence dentro de la prueba, se retira sin costo alguno.</p>
+
+    <h2>8. Términos de la propuesta</h2>
+    <ul>
+      <li>Esta propuesta tiene una validez de <b>15 días</b>.</li>
+      <li>Los precios incluyen impuestos de ley, salvo que se indique lo contrario.</li>
+      <li>La contratación se formaliza con la firma del contrato de servicios adjunto.</li>
+    </ul>
+
+    <div class="sign">
+      <div><div class="line"></div><div class="name"><b>Nexus Software RD</b><br />[Nombre] · [Cargo]<br />Tel: [Teléfono] · [WhatsApp]</div></div>
+      <div><div class="line"></div><div class="name"><b>El cliente</b><br />[Nombre] · [Cargo]<br />Empresa: [Nombre de la empresa]</div></div>
+    </div>
+    <div class="foot">Nexus Software RD · Propuesta NEXUS-00X · Página 3</div>
+  </div>
+
+</body>
+</html>

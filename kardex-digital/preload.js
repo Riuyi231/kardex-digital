@@ -1,0 +1,127 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  login: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  me: () => ipcRenderer.invoke('auth:me'),
+
+  listUsers: () => ipcRenderer.invoke('users:list'),
+  createUser: (payload) => ipcRenderer.invoke('users:create', payload),
+  updateUser: (payload) => ipcRenderer.invoke('users:update', payload),
+  deleteUser: (id) => ipcRenderer.invoke('users:delete', { id }),
+
+  listEmployees: (search, status) => ipcRenderer.invoke('employees:list', { search, status }),
+  getStats: () => ipcRenderer.invoke('employees:stats'),
+  setEmployeeStatus: (id, status, extra) => ipcRenderer.invoke('employees:setStatus', { id, status, extra }),
+  getEmployee: (id) => ipcRenderer.invoke('employees:get', { id }),
+  createEmployee: (data) => ipcRenderer.invoke('employees:create', { data }),
+  updateEmployee: (id, data) => ipcRenderer.invoke('employees:update', { id, data }),
+  deleteEmployee: (id) => ipcRenderer.invoke('employees:delete', { id }),
+
+  listAudit: (limit) => ipcRenderer.invoke('audit:list', { limit }),
+
+  pickCedulaFile: () => ipcRenderer.invoke('cedula:pickFile'),
+  processCedula: (filePath) => ipcRenderer.invoke('cedula:process', { path: filePath }),
+
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+  extractWithAI: (front, back, provider) => ipcRenderer.invoke('ai:extract', { front, back, provider }),
+  getAiSettings: () => ipcRenderer.invoke('ai:settings'),
+  saveAiSettings: (settings) => ipcRenderer.invoke('ai:save-settings', { settings }),
+
+  calcularNomina: (mes, anio, employee_id, departamento) => ipcRenderer.invoke('nomina:calcular', { mes, anio, employee_id, departamento }),
+  calcularNominaQuincenal: (mes, anio, employee_id, departamento) => ipcRenderer.invoke('nomina:quincenal', { mes, anio, employee_id, departamento }),
+  calcularNominaSemanal: (mes, anio, employee_id, departamento) => ipcRenderer.invoke('nomina:semanal', { mes, anio, employee_id, departamento }),
+  calcularNominaDiaria: (mes, anio, employee_id, departamento) => ipcRenderer.invoke('nomina:diario', { mes, anio, employee_id, departamento }),
+  calcularLiquidacion: (id, opciones) => ipcRenderer.invoke('nomina:liquidacion', { id, opciones }),
+  confirmarLiquidacion: (id, fecha_baja, opciones) => ipcRenderer.invoke('liquidacion:confirmar', { id, fecha_baja, opciones }),
+  listLiquidaciones: (employee_id) => ipcRenderer.invoke('liquidacion:list', { employee_id }),
+  listAllLiquidaciones: () => ipcRenderer.invoke('liquidacion:listAll'),
+  deleteLiquidacion: (id) => ipcRenderer.invoke('liquidacion:delete', { id }),
+  calcularRegalia: (anio) => ipcRenderer.invoke('nomina:regalia', { anio }),
+  getHorasExtra: (employee_id, mes, anio) => ipcRenderer.invoke('horasExtra:get', { employee_id, mes, anio }),
+  saveHorasExtra: (data) => ipcRenderer.invoke('horasExtra:save', { data }),
+  listIncentivos: (employee_id, mes, anio) => ipcRenderer.invoke('incentivos:list', { employee_id, mes, anio }),
+  createIncentivo: (data) => ipcRenderer.invoke('incentivos:create', { data }),
+  updateIncentivo: (id, data) => ipcRenderer.invoke('incentivos:update', { id, data }),
+  deleteIncentivo: (id) => ipcRenderer.invoke('incentivos:delete', { id }),
+  getResumenPagoVacaciones: (employee_id, mes, anio) => ipcRenderer.invoke('pagoVacaciones:resumen', { employee_id, mes, anio }),
+  savePagoVacaciones: (data) => ipcRenderer.invoke('pagoVacaciones:save', { data }),
+  deletePagoVacacion: (id) => ipcRenderer.invoke('pagoVacaciones:delete', { id }),
+  exportExcel: (filename, sheets) => ipcRenderer.invoke('export:excel', { filename, sheets }),
+  exportCedulaPdf: (employee_id) => ipcRenderer.invoke('export:cedula-pdf', { employee_id }),
+  exportCedulasPdf: () => ipcRenderer.invoke('export:cedulas-pdf'),
+
+  reportePlantilla: (status) => ipcRenderer.invoke('reportes:plantilla', { status }),
+  reporteAntiguedad: () => ipcRenderer.invoke('reportes:antiguedad'),
+  reporteCumpleanos: (mes) => ipcRenderer.invoke('reportes:cumpleanos', { mes }),
+  reporteDepartamentos: () => ipcRenderer.invoke('reportes:departamentos'),
+
+  listVacaciones: (employee_id) => ipcRenderer.invoke('vacaciones:list', { employee_id }),
+  createVacacion: (data) => ipcRenderer.invoke('vacaciones:create', { data }),
+  deleteVacacion: (id) => ipcRenderer.invoke('vacaciones:delete', { id }),
+
+  listNotificaciones: () => ipcRenderer.invoke('notificaciones:list'),
+  getNotifSettings: () => ipcRenderer.invoke('notificaciones:settings'),
+  saveNotifSettings: (settings) => ipcRenderer.invoke('notificaciones:saveSettings', { settings }),
+  testNotificacion: () => ipcRenderer.invoke('notificaciones:test'),
+  onNotificacionesUpdate: (cb) => ipcRenderer.on('notificaciones:update', (_e, payload) => cb(payload)),
+
+  getCorreoSettings: () => ipcRenderer.invoke('correos:settings'),
+  saveCorreoSettings: (settings) => ipcRenderer.invoke('correos:saveSettings', { settings }),
+  testCorreo: () => ipcRenderer.invoke('correos:test'),
+  sendCedulas: (employee_ids) => ipcRenderer.invoke('correos:sendCedulas', { employee_ids }),
+  sendNomina: (mes, anio, employee_ids, vista) => ipcRenderer.invoke('correos:sendNomina', { mes, anio, employee_ids, vista }),
+  sendReminders: () => ipcRenderer.invoke('correos:sendReminders'),
+  sendCorreoCustom: (payload) => ipcRenderer.invoke('correos:sendCustom', { employee_ids: payload.employeeIds, to: payload.to, subject: payload.subject, text: payload.text, attachments: payload.attachments }),
+  correoLog: (limit) => ipcRenderer.invoke('correos:log', { limit }),
+
+  contactosList: () => ipcRenderer.invoke('contactos:list'),
+  contactosCreate: (data) => ipcRenderer.invoke('contactos:create', { data }),
+  contactosUpdate: (id, data) => ipcRenderer.invoke('contactos:update', { id, data }),
+  contactosDelete: (id) => ipcRenderer.invoke('contactos:delete', { id }),
+
+  backupCreate: (auto) => ipcRenderer.invoke('backup:create', { auto }),
+  backupList: () => ipcRenderer.invoke('backup:list'),
+  backupRestore: (file) => ipcRenderer.invoke('backup:restore', { file }),
+  backupRestoreFile: () => ipcRenderer.invoke('backup:restore-file'),
+  backupSettings: () => ipcRenderer.invoke('backup:settings'),
+  backupSaveSettings: (auto, keep, dir) => ipcRenderer.invoke('backup:saveSettings', { auto, keep, dir }),
+  backupPickDir: () => ipcRenderer.invoke('backup:pick-dir'),
+
+  importTemplate: () => ipcRenderer.invoke('import:template'),
+  importParse: (buffer) => ipcRenderer.invoke('import:parse', { buffer }),
+  importRun: (rows) => ipcRenderer.invoke('import:run', { rows }),
+
+  exportConstanciaPdf: (employee_id, format) => ipcRenderer.invoke('export:constancia-pdf', { employee_id, format }),
+  exportCartaSalarioPdf: (employee_id, format) => ipcRenderer.invoke('export:carta-salario-pdf', { employee_id, format }),
+  exportSolicitudPdf: (employee_id, format) => ipcRenderer.invoke('export:solicitud-pdf', { employee_id, format }),
+
+  historialList: (employee_id) => ipcRenderer.invoke('historial:list', { employee_id }),
+
+  reporte609: (anio) => ipcRenderer.invoke('reportes:609', { anio }),
+  reporte609Excel: (anio) => ipcRenderer.invoke('reportes:609-excel', { anio }),
+
+  docsGetSettings: () => ipcRenderer.invoke('docs:get-settings'),
+  docsSaveSettings: (payload) => ipcRenderer.invoke('docs:save-settings', payload),
+
+  getServerConfig: () => ipcRenderer.invoke('system:get-config'),
+  setServerConfig: (payload) => ipcRenderer.invoke('system:set-config', payload),
+  testServer: (url, token) => ipcRenderer.invoke('system:test-server', { url, token }),
+  discoverServers: () => ipcRenderer.invoke('system:discover'),
+  wizardDone: () => ipcRenderer.invoke('system:wizard-done'),
+  restartApp: () => ipcRenderer.invoke('system:restart'),
+
+  serverStatus: () => ipcRenderer.invoke('server:status'),
+  serverSetName: (name) => ipcRenderer.invoke('server:set-name', { name }),
+  serverRegenerateToken: () => ipcRenderer.invoke('server:regenerate-token'),
+  serverFirewallFix: (ports) => ipcRenderer.invoke('server:firewall-fix', ports || {}),
+  serverFirewallStatus: () => ipcRenderer.invoke('server:firewall-status'),
+  serverAvDetect: () => ipcRenderer.invoke('server:av-detect'),
+  serverSelfPing: () => ipcRenderer.invoke('server:self-ping'),
+  serverOpenDataFolder: () => ipcRenderer.invoke('server:open-data-folder'),
+  serverToLocal: () => ipcRenderer.invoke('server:to-local'),
+  serverStop: () => ipcRenderer.invoke('server:stop'),
+
+  licenseStatus: () => ipcRenderer.invoke('license:status'),
+  licenseActivate: (key) => ipcRenderer.invoke('license:activate', { key })
+});

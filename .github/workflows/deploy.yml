@@ -1,0 +1,161 @@
+name: Deploy NexAlert
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.5.0)'
+        required: false
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get or set version
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(jq -r .version reportes-equipos/package.json)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Update versions
+        if: github.event.inputs.version != ''
+        run: |
+          # Update desktop
+          jq --arg v "${{ steps.get_version.outputs.version }}" '.version = $v' reportes-equipos/package.json > tmp.json && mv tmp.json reportes-equipos/package.json
+          # Update mobile
+          sed -i "s/const CURRENT_APP_VERSION = '[^']*'/const CURRENT_APP_VERSION = '${{ steps.get_version.outputs.version }}'/" nexalert-app/www/app.js
+          # Update server
+          sed -i "s/const APP_VERSION = '[^']*'/const APP_VERSION = '${{ steps.get_version.outputs.version }}'/" nexalert-server/src/index.js
+          # Update cache buster
+          sed -i "s/app\.js?v=[^\"]*/app.js?v=${{ steps.get_version.outputs.version }}/" nexalert-app/www/index.html
+          # Commit
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}"
+          git push
+
+  build-desktop:
+    needs: update-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and build
+        working-directory: reportes-equipos
+        run: |
+          npm ci
+          npm run dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop
+          path: |
+            reportes-equipos/dist/*.exe
+            reportes-equipos/dist/latest.yml
+            reportes-equipos/dist/*.blockmap
+
+  build-apk:
+    needs: update-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install and build
+        run: |
+          cd nexalert-app
+          npm ci
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: nexalert-app/android/app/build/outputs/apk/debug/app-debug.apk
+
+  deploy:
+    needs: [update-version, build-desktop, build-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop
+          path: artifacts/desktop
+
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: artifacts/apk
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GCP_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.GCP_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        env:
+          VERSION: ${{ needs.update-version.outputs.version }}
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}"
+
+          # Upload desktop files
+          scp -i ~/.ssh/deploy_key artifacts/desktop/latest.yml ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/latest.yml
+          scp -i ~/.ssh/deploy_key artifacts/desktop/*.exe ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/setup.exe
+
+          # Upload APK
+          scp -i ~/.ssh/deploy_key artifacts/apk/app-debug.apk ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/app-latest.apk
+
+          # Upload server files
+          scp -i ~/.ssh/deploy_key nexalert-server/src/index.js ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/index.js
+          scp -i ~/.ssh/deploy_key nexalert-app/www/app.js ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/app.js
+          scp -i ~/.ssh/deploy_key nexalert-app/www/index.html ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }}:/home/${{ secrets.GCP_USER }}/index.html
+
+          # Deploy on server
+          ssh -i ~/.ssh/deploy_key ${{ secrets.GCP_USER }}@${{ secrets.GCP_HOST }} "
+            sudo cp /home/${{ secrets.GCP_USER }}/latest.yml /opt/nexalert-server/updates/ &&
+            sudo cp /home/${{ secrets.GCP_USER }}/setup.exe '/opt/nexalert-server/updates/NexAlert Setup ${VERSION}.exe' &&
+            sudo cp /home/${{ secrets.GCP_USER }}/app-latest.apk /opt/nexalert-server/updates/ &&
+            sudo cp /home/${{ secrets.GCP_USER }}/index.js /opt/nexalert-server/src/ &&
+            sudo cp /home/${{ secrets.GCP_USER }}/app.js /opt/nexalert-server/app/ &&
+            sudo cp /home/${{ secrets.GCP_USER }}/index.html /opt/nexalert-server/app/ &&
+            sudo chmod -R 755 /opt/nexalert-server/updates/ &&
+            sudo systemctl restart nexalert &&
+            echo 'Deploy completado!'
+          "

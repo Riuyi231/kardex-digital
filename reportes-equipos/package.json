@@ -1,0 +1,65 @@
+{
+    "name":  "reportes-equipos",
+    "version":  "1.5.0",
+    "description":  "Sistema de reportes de fallas de equipos con envío a grupos de WhatsApp",
+    "main":  "main.js",
+    "scripts":  {
+                    "start":  "electron .",
+                    "smoke":  "electron . --smoke",
+                    "dist":  "electron-builder --win nsis --x64",
+                    "dist:portable":  "electron-builder --win portable --x64",
+                    "deploy":  "cd .. \u0026\u0026 deploy.bat"
+                },
+    "devDependencies":  {
+                            "electron":  "^37.2.0",
+                            "electron-builder":  "^26.15.3"
+                        },
+    "dependencies":  {
+                         "@whiskeysockets/baileys":  "^7.0.0-rc14",
+                         "electron-updater":  "^6.8.9",
+                         "qrcode":  "^1.5.4",
+                         "sql.js":  "^1.12.0",
+                         "xlsx":  "^0.18.5"
+                     },
+    "build":  {
+                  "appId":  "com.nexus.nexalert",
+                  "productName":  "NexAlert",
+                  "directories":  {
+                                      "output":  "dist"
+                                  },
+                  "files":  [
+                                "main.js",
+                                "preload.js",
+                                "renderer/**/*",
+                                "services/**/*",
+                                "node_modules/**/*",
+                                "!.puppeteer-cache/**",
+                                "!dist/**"
+                            ],
+                  "extraResources":  [
+                                         {
+                                             "from":  "build/icon-512.png",
+                                             "to":  "icon.png"
+                                         }
+                                     ],
+                  "asarUnpack":  [
+                                     "node_modules/sql.js/dist/**"
+                                 ],
+                  "win":  {
+                              "target":  "nsis",
+                              "icon":  "build/icon.ico"
+                          },
+                  "nsis":  {
+                               "oneClick":  true,
+                               "allowElevation":  true,
+                               "runAfterFinish":  true
+                           },
+                  "publish":  [
+                                  {
+                                      "provider":  "generic",
+                                      "url":  "https://nexalert.duckdns.org/updates",
+                                      "channel":  "latest"
+                                  }
+                              ]
+              }
+}

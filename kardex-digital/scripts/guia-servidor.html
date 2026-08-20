@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>KARDEX Digital · Guía del modo servidor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    font-size: 12.5px;
+    line-height: 1.55;
+    width: 794px;
+    margin: 0 auto;
+    padding: 28px 40px;
+  }
+  h1 { font-size: 24px; color: #0f172a; }
+  h2 {
+    font-size: 16px; color: #ffffff; background: #2563eb;
+    padding: 8px 14px; border-radius: 8px; margin: 22px 0 10px;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 13px; color: #1d4ed8; margin: 14px 0 4px; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 22px; }
+  li { margin: 3px 0; }
+  .portada {
+    text-align: center; padding: 40px 20px; border: 2px solid #2563eb;
+    border-radius: 14px; margin-bottom: 24px;
+  }
+  .portada .logo { font-size: 34px; font-weight: 800; color: #0f172a; }
+  .portada .logo span { color: #2563eb; }
+  .portada .sub { font-size: 15px; color: #475569; margin-top: 6px; }
+  .portada .meta { font-size: 12px; color: #64748b; margin-top: 16px; }
+  .card {
+    border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 8px 0;
+    background: #f8fafc;
+  }
+  .rol { display: flex; align-items: center; gap: 10px; }
+  .rol-num {
+    flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%;
+    background: #2563eb; color: #fff; font-weight: 700; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rol-num.green { background: #16a34a; }
+  .rol-num.gray { background: #64748b; }
+  .warn {
+    border-left: 4px solid #d97706; background: #fffbeb;
+    padding: 10px 12px; border-radius: 0 8px 8px 0; margin: 10px 0;
+  }
+  .ok {
+    border-left: 4px solid #16a34a; background: #ecfdf5;
+    padding: 10px 12px; border-radius: 0 8px 8px 0; margin: 10px 0;
+  }
+  .info {
+    border-left: 4px solid #2563eb; background: #eff6ff;
+    padding: 10px 12px; border-radius: 0 8px 8px 0; margin: 10px 0;
+  }
+  code {
+    font-family: Consolas, monospace; background: #eef2f7;
+    padding: 1px 6px; border-radius: 4px; font-size: 11.5px;
+  }
+  .step { page-break-inside: avoid; }
+  .footer {
+    margin-top: 28px; padding-top: 10px; border-top: 1px solid #e2e8f0;
+    color: #94a3b8; font-size: 11px; text-align: center;
+  }
+  .page-break { page-break-before: always; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 6px 10px; text-align: left; font-size: 12px; }
+  th { background: #f1f5f9; }
+  b { color: #0f172a; }
+</style>
+</head>
+<body>
+
+<div class="portada">
+  <div class="logo">KARDEX <span>Digital</span></div>
+  <div class="sub">Guía para instalar y arrancar el modo servidor en la empresa</div>
+  <div class="meta">Instalación en red local (WiFi / LAN) · Windows 10 / 11</div>
+</div>
+
+<div class="card">
+  <p><b>Resumen:</b> instala el <b>mismo KARDEX</b> en todas las PCs. En <b>una sola PC</b> (la principal) eliges la opción <b>"Este equipo es el servidor"</b>; en <b>las demás</b>, eliges <b>"Conectar al servidor"</b>. Los datos quedan centralizados en la PC principal y todas las demás trabajan sobre la misma base de datos por la red.</p>
+</div>
+
+<div class="info">
+  <p><b>Requisitos:</b></p>
+  <ul>
+    <li>Todas las PCs en la <b>misma red</b> (mismo WiFi o misma LAN).</li>
+    <li>Windows 10 u 11 en cada equipo.</li>
+    <li>El programa KARDEX Digital (instalador <code>KARDEX-Digital-Setup.exe</code> o el portable <code>KARDEX-Digital-portable.exe</code>).</li>
+    <li>La PC principal debe quedar <b>encendida con KARDEX abierto</b> mientras los demás trabajan.</li>
+  </ul>
+</div>
+
+<h2>Paso 1 · Instala KARDEX en todas las PCs</h2>
+<div class="step">
+  <ul>
+    <li>En la PC principal y en cada puesto de trabajo instala el mismo programa (Setup o portable; da igual la versión, solo que sea la actual).</li>
+    <li>Recomendación: la PC principal debe tener la <b>base de datos con los datos actuales</b>. Si KARDEX ya se usaba en una sola PC, esa es la PC principal ideal: copia su carpeta de datos completa al destino donde quieras que viva la base central.</li>
+  </ul>
+</div>
+
+<h2 class="page-break">Paso 2 · Configura la PC principal (solo una vez)</h2>
+<div class="step">
+  <ol>
+    <li>Abre KARDEX en la PC principal.</li>
+    <li>En la pantalla de inicio de sesión, haz clic en el botón <b>"🌐 Conexión y servidor…"</b>.</li>
+    <li>Selecciona la tercera tarjeta: <b>"🖥️ Este equipo es el servidor"</b>.</li>
+    <li>Escribe el <b>nombre del servidor</b>, por ejemplo <code>kardex</code> (así lo escribirán los clientes).</li>
+    <li>Haz clic en <b>"🛡️ Permitir en el Firewall automáticamente"</b> y acepta la ventana de Windows que aparezca (se configura solo).</li>
+    <li>Haz clic en <b>"Aplicar y reiniciar"</b>.</li>
+  </ol>
+  <div class="ok">
+    <p><b>Después del reinicio:</b> KARDEX queda <b>oculto en la bandeja</b> (junto al reloj de Windows) sirviendo la base central, y se abre el <b>panel del servidor</b> con el estado y las instrucciones.</p>
+  </div>
+  <div class="info">
+    <p><b>Opciones avanzadas</b> (puerto y token): por defecto se usan <code>18006</code> y un token generado automáticamente. Si lo necesitas, despliega <b>"⚙️ Opciones avanzadas"</b> dentro del mismo cuadro.</p>
+  </div>
+  <div class="info">
+    <p><b>Para volver a abrir el panel del servidor:</b> haz <b>doble clic</b> en el icono de la bandeja. Ahí verás el nombre, las direcciones, el token (mostrar / copiar / regenerar), el estado del Firewall y los botones para apagar o volver a modo local.</p>
+  </div>
+</div>
+
+<h2>Paso 3 · Firewall y antivirus en la PC principal</h2>
+<div class="step">
+  <p>Esto es obligatorio: sin permitirlo, las demás PCs no podrán conectarse ni encontrar el servidor.</p>
+  <ol>
+    <li>Abre el <b>panel del servidor</b> (doble clic en el icono de la bandeja).</li>
+    <li>En la tarjeta <b>"Visibilidad en la red"</b> pulsa <b>"🛡️ Permitir en el Firewall"</b> y acepta la ventana de Windows.</li>
+    <li>Confirma que el estado cambie a <b>"✓ El Firewall ya permite este servidor"</b>.</li>
+    <li>Usa <b>"🔄 Probar el servidor"</b> para comprobar que responde.</li>
+  </ol>
+  <div class="warn">
+    <p><b>Antivirus de terceros</b> (Norton, Avast, McAfee, Kaspersky…): también deben permitir KARDEX Digital. El panel detecta cuál tienes instalado y te da las instrucciones exactas, o usa el botón <b>"📋 Copiar instrucciones para el administrador"</b>.</p>
+  </div>
+</div>
+
+<h2 class="page-break">Paso 4 · Configura cada PC de trabajo (cliente)</h2>
+<div class="step">
+  <ol>
+    <li>Abre KARDEX en la PC del puesto de trabajo.</li>
+    <li>En la pantalla de inicio de sesión, clic en <b>"🌐 Conexión y servidor…"</b>.</li>
+    <li>Selecciona la segunda tarjeta: <b>"🌐 Conectar al servidor"</b>.</li>
+    <li>Escribe el <b>nombre del servidor</b> (el que pusiste en la PC principal, por ejemplo <code>kardex</code>) y clic en <b>"🔎 Buscar por nombre"</b>:
+      <ul>
+        <li>La dirección se rellena sola.</li>
+        <li>También puedes usar <b>"🔍 Buscar servidores en la red"</b> y pulsar <b>"Usar"</b> en el que aparezca.</li>
+        <li>Si ninguno aparece, escribe la dirección manualmente, por ejemplo <code>http://192.168.1.50:18006</code> (la IP aparece en el panel del servidor).</li>
+      </ul>
+    </li>
+    <li>Escribe el <b>token</b> (el mismo que generaste en el servidor; lo ves en el panel del servidor, botón "Mostrar").</li>
+    <li>Haz clic en <b>"Probar conexión"</b> y espera el mensaje <b>"Conexión exitosa"</b>.</li>
+    <li>Haz clic en <b>"Aplicar y reiniciar"</b>.</li>
+  </ol>
+  <div class="ok">
+    <p>Al reiniciar, en la pantalla de login verás en verde <b>"Servidor conectado: http://…"</b>. La PC ya trabaja sobre la base central.</p>
+  </div>
+  <div class="info">
+    <p><b>Repite este paso en cada PC de trabajo.</b> Todas usan el mismo nombre, la misma dirección y el mismo token.</p>
+  </div>
+</div>
+
+<h2>Paso 5 · Verifica que todo funciona</h2>
+<div class="step">
+  <ol>
+    <li>Inicia sesión normalmente en una PC de trabajo (usuario y contraseña de siempre).</li>
+    <li>Crea o modifica un empleado en esa PC.</li>
+    <li>Abre KARDEX en <b>otra PC de trabajo</b> y comprueba que ves el mismo cambio: confirma que están compartiendo la misma base de datos.</li>
+  </ol>
+</div>
+
+<h2>Consejos y errores comunes</h2>
+<div class="step">
+  <table>
+    <tr><th>Situación</th><th>Qué hacer</th></tr>
+    <tr><td>El cliente dice "Servidor no alcanzable"</td><td>Verifica que la PC principal esté encendida y KARDEX corriendo en la bandeja; revisa el firewall.</td></tr>
+    <tr><td>"Buscar servidores" no encuentra nada</td><td>Asegúrate de que el firewall permita el <b>UDP 18007</b> en la PC principal y de que ambas PCs estén en la misma red.</td></tr>
+    <tr><td>"Token no autorizado"</td><td>El token del cliente debe ser <b>exactamente igual</b> al del servidor (puedes regenerarlo en el panel y copiarlo).</td></tr>
+    <tr><td>Dos PCs en "servidor"</td><td>Solo debe existir <b>una</b> PC marcada como servidor; las demás, como clientes.</td></tr>
+    <tr><td>Volver a usar la PC como local</td><td>En "Conexión y servidor…" elige "Base de datos local" y reinicia. En el servidor también está la opción "Cambiar a modo local".</td></tr>
+  </table>
+  <div class="warn">
+    <p><b>Importante:</b> el token protege la base central. No lo compartas fuera de la empresa. Si se filtra, regenéralo desde el panel del servidor y actualiza los clientes.</p>
+  </div>
+</div>
+
+<div class="footer">
+  KARDEX Digital · Guía del modo servidor · 2026
+</div>
+
+</body>
+</html>

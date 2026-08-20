@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NexAlert Tecnicos</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="offline-bar" class="offline-bar hidden">Sin conexion — modo offline</div>
+<div id="pull-indicator" class="pull-indicator hidden"><div class="pull-spinner"></div></div>
+
+<header id="topbar" class="hidden">
+  <div class="brand">
+    <span class="logo-mark">
+      <img src="logo.png" alt="NexAlert">
+    </span>
+    <span class="brand-name">NexAlert</span>
+  </div>
+  <div class="top-actions">
+    <span id="badge-pendientes" class="badge-pend hidden">0</span>
+    <button id="btn-nuevo" class="icon-btn btn-nuevo-rp" title="Nuevo reporte" aria-label="Nuevo reporte">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+    <div class="top-menu-wrap">
+      <button id="btn-menu" class="icon-btn" title="Menu" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5" fill="currentColor"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor"></circle><circle cx="12" cy="19" r="1.5" fill="currentColor"></circle></svg>
+      </button>
+      <div id="top-dropdown" class="top-dropdown hidden">
+        <button id="btn-stats" class="dd-item">Estadisticas</button>
+        <button id="btn-refresh" class="dd-item">Actualizar</button>
+        <button id="btn-theme" class="dd-item">Tema</button>
+        <button id="btn-logout" class="dd-item dd-danger">Cerrar sesion</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="view" class="hidden">
+  <section id="home">
+    <div class="home-head">
+      <div>
+        <h1>Mis reportes</h1>
+        <p id="ultimo-update" class="hint"></p>
+      </div>
+    </div>
+    <div id="filtro">
+      <input id="buscar" type="search" placeholder="Buscar cliente, equipo o problema">
+      <select id="filtro-estado">
+        <option value="">Todos</option>
+        <option value="abierto">Abierto</option>
+        <option value="en_proceso">En proceso</option>
+        <option value="espera_repuesto">Espera repuesto</option>
+        <option value="espera_cliente">Espera cliente</option>
+        <option value="resuelto">Resuelto</option>
+      </select>
+      <select id="filtro-prio">
+        <option value="">Prioridad</option>
+        <option value="urgente">Urgente</option>
+        <option value="alta">Alta</option>
+        <option value="normal">Normal</option>
+        <option value="baja">Baja</option>
+      </select>
+      <div class="filtro-fechas">
+        <input id="filtro-desde" type="date" title="Desde">
+        <input id="filtro-hasta" type="date" title="Hasta">
+      </div>
+    </div>
+    <div id="lista"></div>
+  </section>
+
+  <section id="nuevo-reporte" class="hidden">
+    <button id="btn-nuevo-back" class="back-btn">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      Volver
+    </button>
+    <div class="form-card">
+      <h2>Nuevo reporte</h2>
+      <form id="form-nuevo">
+        <label class="form-field">
+          <span class="form-label">Cliente <span class="req">*</span></span>
+          <input id="nf-cliente" type="text" placeholder="Nombre del cliente" required autocomplete="off">
+        </label>
+        <label class="form-field">
+          <span class="form-label">Equipo</span>
+          <input id="nf-equipo" type="text" placeholder="Marca, modelo, serie..." autocomplete="off">
+        </label>
+        <label class="form-field">
+          <span class="form-label">Descripcion del problema <span class="req">*</span></span>
+          <textarea id="nf-descripcion" rows="3" placeholder="Describe el problema..." required></textarea>
+        </label>
+        <label class="form-field">
+          <span class="form-label">Prioridad</span>
+          <select id="nf-prioridad">
+            <option value="normal" selected>Normal</option>
+            <option value="baja">Baja</option>
+            <option value="alta">Alta</option>
+            <option value="urgente">Urgente</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" id="nf-submit" class="btn-primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Guardar reporte</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="detalle" class="hidden">
+    <button id="btn-back" class="back-btn">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      Volver
+    </button>
+    <div id="detalle-contenido"></div>
+  </section>
+
+  <section id="dashboard-section" class="hidden"></section>
+</main>
+
+<div id="login">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="logo-mark big">
+        <img src="logo.png" alt="NexAlert">
+      </span>
+      <p class="login-greet">Bienvenido, tecnico</p>
+    </div>
+    <form id="login-form">
+      <label>Usuario
+        <input id="in-usuario" type="text" autocomplete="username" placeholder="Tu usuario" required>
+      </label>
+      <label>Contrasena
+        <input id="in-pass" type="password" autocomplete="current-password" placeholder="Tu contrasena" required>
+      </label>
+      <p id="login-error" class="error hidden"></p>
+      <button type="submit" id="btn-login" class="btn-primary">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<div id="modal" class="hidden">
+  <div class="modal-card">
+    <h2 id="modal-titulo"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button id="modal-cancel" class="btn-ghost">Cancelar</button>
+      <button id="modal-ok" class="btn-primary">Aceptar</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="in-foto-cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="in-foto-gal" accept="image/*" hidden>
+
+<div id="foto-overlay" class="hidden">
+  <img id="foto-overlay-img" alt="Foto">
+  <button id="btn-foto-del" class="foto-del" title="Eliminar foto" type="button">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+  </button>
+</div>
+
+<div id="espera-modal" class="hidden">
+  <div class="modal-card espera-card">
+    <h2 id="espera-titulo">Espera de repuesto</h2>
+    <p class="espera-hint">Describe la pieza que se necesita o el motivo de la espera.</p>
+    <textarea id="esp-nota" rows="3" placeholder="Ej: Falta bombillo LED 15W..."></textarea>
+    <div class="esp-foto-section">
+      <div class="esp-foto-btns">
+        <button id="esp-foto-cam" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Foto</button>
+        <button id="esp-foto-gal" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Galeria</button>
+      </div>
+      <img id="esp-foto-preview" class="esp-foto-preview hidden" alt="preview">
+      <span id="esp-foto-nombre" class="form-hint"></span>
+    </div>
+    <div class="modal-actions">
+      <button id="esp-cancel" class="btn-ghost">Cancelar</button>
+      <button id="esp-submit" class="btn-primary">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

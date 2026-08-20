@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>NexAlert</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo"><img src="logo.png" alt="NexAlert"></span>
+      <div>
+        <strong>NexAlert <span id="app-version" class="app-version"></span></strong>
+        <span id="negocio-top">—</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="btn-lic-top" class="btn ghost" title="Licencia">🔑</button>
+      <button id="btn-wa-top" class="btn ghost" title="Conectar WhatsApp">💬</button>
+      <button id="btn-settings" class="btn ghost" title="Configuración">⚙️</button>
+    </div>
+  </header>
+
+  <div id="lic-bar" class="lic-bar">
+    <span id="lic-text">Licencia: cargando…</span>
+    <button id="btn-lic" class="btn small">Activar licencia</button>
+  </div>
+
+  <div id="wa-bar" class="wa-bar off">
+    <span id="wa-dot" class="wa-dot"></span>
+    <span id="wa-text">WhatsApp: desconectado</span>
+    <button id="btn-wa-connect" class="btn small">Conectar WhatsApp</button>
+  </div>
+
+  <div id="pending-bar" class="pending-bar hidden">
+    <span id="pending-text"></span>
+    <button id="btn-pending-go" class="btn small">Ver</button>
+  </div>
+
+  <div id="update-bar" class="pending-bar hidden" style="background:#1a5276;">
+    <span id="update-text"></span>
+    <button id="btn-update-install" class="btn small" style="display:none;">Instalar y reiniciar</button>
+  </div>
+
+  <nav id="tabs">
+    <button class="tab active" data-tab="panel">📊 Panel</button>
+    <button class="tab" data-tab="clientes">👥 Clientes</button>
+    <button class="tab" data-tab="equipos">🖥️ Equipos</button>
+    <button class="tab" data-tab="reportes">📋 Reportes</button>
+    <button class="tab" data-tab="mensajes">💬 Mensajes <span id="tab-mensajes-badge" class="tab-badge hidden"></span></button>
+    <button class="tab" data-tab="tecnicos">👷 Técnicos</button>
+  </nav>
+
+  <main id="view-panel" class="view active">
+    <div id="panel-stats" class="panel-stats"></div>
+    <div id="panel-body" class="panel-body"></div>
+  </main>
+
+  <main id="view-clientes" class="view">
+    <div class="toolbar">
+      <input id="cl-search" type="search" placeholder="Buscar cliente…">
+      <button id="btn-nuevo-cliente" class="btn primary">➕ Nuevo cliente</button>
+    </div>
+    <div id="cl-count" class="count"></div>
+    <div id="cl-list" class="cards"></div>
+  </main>
+
+  <main id="view-equipos" class="view">
+    <div id="eq-detail-head" class="sub-head hidden">
+      <button id="btn-eq-back" class="btn">← Volver</button>
+      <div id="eq-detail-title" class="sub-title"></div>
+    </div>
+    <div class="toolbar">
+      <input id="eq-search" type="search" placeholder="Buscar…">
+      <button id="btn-nuevo-equipo" class="btn primary">➕ Nuevo equipo</button>
+    </div>
+    <div id="eq-count" class="count"></div>
+    <div id="eq-list" class="cards"></div>
+  </main>
+
+  <main id="view-reportes" class="view">
+    <div class="toolbar">
+      <select id="rp-filter">
+        <option value="">Todos los reportes</option>
+        <option value="urgentes">⚡ Urgentes</option>
+        <option value="abierto">Abiertos</option>
+        <option value="en_proceso">En proceso</option>
+        <option value="en_espera">⏸ En espera</option>
+        <option value="resuelto">Resueltos</option>
+        <option value="pendientes">Pendientes de enviar</option>
+        <option value="sin_asignar">Sin técnico asignado</option>
+        <option value="archivados">📦 Archivados</option>
+      </select>
+      <input id="rp-search" type="search" placeholder="🔍 Buscar por texto…" autocomplete="off">
+      <select id="rp-month-filter"><option value="">Todos los meses</option></select>
+      <select id="rp-client-filter"><option value="">Todos los clientes</option></select>
+      <select id="rp-equipo-filter"><option value="">Todos los equipos</option></select>
+      <button id="btn-nuevo-reporte" class="btn primary">➕ Nuevo reporte</button>
+      <button id="btn-resumen" class="btn">📊 Resumen</button>
+      <button id="btn-exportar" class="btn">📥 Excel</button>
+    </div>
+    <div id="rp-count" class="count"></div>
+    <div id="rp-list" class="cards"></div>
+  </main>
+
+  <main id="view-mensajes" class="view">
+    <div id="ms-help" class="ms-help hidden"></div>
+    <div id="ms-body" class="ms-body">
+      <div class="ms-side">
+        <div class="ms-side-head">
+          <span class="ms-side-title">Mensajes</span>
+          <div class="ms-side-actions">
+            <button id="btn-ms-refresh" class="btn ghost" title="Actualizar">🔄</button>
+            <button id="btn-ms-borrar-todos" class="btn ghost danger-ms" title="Borrar todos los chats">🗑️</button>
+          </div>
+        </div>
+        <div class="ms-search-box">
+          <span class="ms-search-icon">🔍</span>
+          <input id="ms-search" type="search" placeholder="Buscar o empezar un chat…" autocomplete="off">
+        </div>
+        <div id="ms-chats" class="ms-chats"></div>
+      </div>
+      <div class="ms-main">
+        <div id="ms-chat-head" class="ms-chat-head hidden"></div>
+        <div id="ms-selbar" class="ms-selbar hidden">
+          <span id="ms-sel-count">0 seleccionados</span>
+          <button id="btn-ms-sel-reporte" class="btn primary">➡️ Crear reporte</button>
+          <button id="btn-ms-sel-cancel" class="btn ghost">✖ Cancelar</button>
+        </div>
+        <div id="ms-chat-msgs" class="ms-chat-msgs">
+          <div class="ms-placeholder">
+            <div class="ms-placeholder-icon">💬</div>
+            <p>Selecciona una conversación<br>para ver sus mensajes</p>
+          </div>
+        </div>
+        <div id="ms-reply-bar" class="ms-reply-bar hidden">
+          <div class="ms-reply-info">
+            <span class="ms-reply-label">↩ Respondiendo a <b id="ms-reply-nombre"></b></span>
+            <span class="ms-reply-preview" id="ms-reply-preview"></span>
+          </div>
+          <button id="btn-ms-reply-cancel" class="btn ms-icon" title="Cancelar respuesta">✕</button>
+        </div>
+        <div id="ms-rec" class="ms-rec hidden">
+          <span class="ms-rec-dot"></span>
+          <span class="ms-rec-time" id="ms-rec-time">0:00</span>
+          <span class="ms-rec-label">Grabando nota de voz…</span>
+          <button id="btn-ms-rec-cancel" class="btn ms-icon" title="Cancelar grabación">✕</button>
+        </div>
+        <div id="ms-reply" class="ms-reply hidden">
+          <div id="ms-mention-panel" class="ms-mention-panel hidden"></div>
+          <div id="ms-attach-menu" class="ms-attach-menu hidden">
+            <button class="attach-item" data-accion="adjuntar-imagen">📷 Imagen</button>
+            <button class="attach-item" data-accion="adjuntar-video">🎬 Video</button>
+            <button class="attach-item" data-accion="adjuntar-sticker">😀 Sticker</button>
+            <button class="attach-item" data-accion="adjuntar-documento">📄 Documento</button>
+          </div>
+          <div id="ms-emoji-panel" class="ms-emoji-panel hidden">
+            <div id="ms-emoji-grid" class="ms-emoji-grid"></div>
+          </div>
+          <div id="ms-sticker-panel" class="ms-sticker-panel hidden">
+            <div class="ms-sticker-head">
+              <span>Mis stickers</span>
+              <button id="btn-ms-sticker-add" class="btn small" title="Importar tus stickers (.webp)">➕ Agregar</button>
+            </div>
+            <div id="ms-sticker-grid" class="ms-sticker-grid"></div>
+          </div>
+          <button id="btn-ms-emoji" class="btn ms-icon" title="Emojis">😊</button>
+          <button id="btn-ms-attach" class="btn ms-icon" title="Adjuntar archivo">📎</button>
+          <textarea id="ms-reply-input" rows="1" placeholder="Escribe un mensaje"></textarea>
+          <button id="btn-ms-mic" class="btn ms-icon" title="Grabar nota de voz">🎤</button>
+          <button id="btn-ms-send" class="btn send" title="Enviar">➤</button>
+        </div>
+        <input type="file" id="ms-file-imagen" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp" class="hidden">
+        <input type="file" id="ms-file-video" accept="video/mp4,video/webm,video/quicktime,video/x-m4v" class="hidden">
+        <input type="file" id="ms-file-sticker" accept="image/webp,.webp" class="hidden">
+        <input type="file" id="ms-file-documento" class="hidden">
+        <input type="file" id="ms-file-sticker-pack" accept="image/webp,.webp" class="hidden" multiple>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-tecnicos" class="view">
+    <div class="toolbar">
+      <input id="tc-search" type="search" placeholder="Buscar técnico…">
+      <button id="btn-importar-tecnicos" class="btn">📥 Importar desde archivo</button>
+      <button id="btn-nuevo-tecnico" class="btn primary">➕ Nuevo técnico</button>
+    </div>
+    <div id="tc-count" class="count"></div>
+    <div id="tc-list" class="cards"></div>
+  </main>
+
+  <div id="modal-mask" class="mask hidden">
+    <div id="modal" class="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">Formulario</h3>
+        <button id="btn-modal-close" class="btn ghost">✕</button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-foot">
+        <button id="btn-modal-cancel" class="btn">Cancelar</button>
+        <button id="btn-modal-ok" class="btn primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="qr-mask" class="mask hidden">
+    <div class="modal qr-modal">
+      <div class="modal-head">
+        <h3>Conexión de WhatsApp</h3>
+        <button id="btn-qr-close" class="btn ghost">✕</button>
+      </div>
+      <div class="qr-body">
+        <img id="qr-img" class="qr-img hidden" alt="QR">
+        <div id="qr-msg" class="qr-msg"></div>
+        <button id="btn-qr-refresh" class="btn">Mostrar QR</button>
+        <button id="btn-qr-reset" class="btn danger">🔄 Reiniciar sesión (QR nuevo)</button>
+        <button id="btn-qr-disconnect" class="btn danger">Desconectar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hist-mask" class="mask hidden">
+    <div class="modal hist-modal">
+      <div class="modal-head">
+        <h3>Historial del reporte</h3>
+        <button id="btn-hist-close" class="btn ghost">✕</button>
+      </div>
+      <div id="hist-body" class="hist-body"></div>
+    </div>
+  </div>
+
+  <div id="resolver-mask" class="mask hidden">
+    <div class="modal resolver-modal">
+      <div class="modal-head">
+        <h3>✅ Resolver reporte</h3>
+        <button id="btn-resolver-close" class="btn ghost">✕</button>
+      </div>
+      <div id="resolver-body" class="resolver-body"></div>
+      <div class="modal-foot">
+        <button id="btn-resolver-cancel" class="btn">Cancelar</button>
+        <button id="btn-resolver-ok" class="btn primary">Resolver y guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-mask" class="mask hidden">
+    <div class="modal share-modal">
+      <div class="modal-head">
+        <h3>📤 Compartir reporte</h3>
+        <button id="btn-share-close" class="btn ghost">✕</button>
+      </div>
+      <div id="share-body" class="share-body"></div>
+      <div class="modal-foot">
+        <button id="btn-share-cancel" class="btn">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ms-img-mask" class="mask hidden">
+    <div class="ms-img-lightbox">
+      <div class="ms-img-head">
+        <span id="ms-img-title">Imagen</span>
+        <div class="ms-img-actions">
+          <button id="btn-ms-img-download" class="btn ghost small" title="Descargar imagen">⬇ Descargar</button>
+          <button id="btn-ms-img-close" class="btn ghost">✕</button>
+        </div>
+      </div>
+      <div class="ms-img-stage">
+        <img id="ms-img-full" class="ms-img-full" alt="Imagen">
+        <video id="ms-video-full" class="ms-video-full hidden" controls playsinline preload="metadata"></video>
+      </div>
+    </div>
+  </div>
+
+  <div id="foto-mask" class="mask hidden">
+    <div class="foto-lightbox">
+      <div class="foto-head">
+        <span id="foto-count" class="foto-count"></span>
+        <button id="btn-foto-close" class="btn ghost">✕</button>
+      </div>
+      <div class="foto-stage">
+        <button id="btn-foto-prev" class="btn foto-nav">‹</button>
+        <img id="foto-img" class="foto-img" alt="Foto">
+        <button id="btn-foto-next" class="btn foto-nav">›</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lic-mask" class="mask hidden">
+    <div class="modal lic-modal">
+      <div class="modal-head">
+        <h3>Licencia de NEXALERT</h3>
+        <button id="btn-lic-close" class="btn ghost">✕</button>
+      </div>
+      <div class="lic-body">
+        <div id="lic-current" class="lic-current"></div>
+        <label class="lic-label" for="lic-key">Clave de licencia</label>
+        <textarea id="lic-key" rows="4" spellcheck="false" placeholder="Pega aquí la clave de licencia que recibiste, o carga un archivo .lic…"></textarea>
+        <div class="lic-file-row">
+          <button id="btn-lic-file" class="btn">📄 Cargar archivo .lic</button>
+          <input type="file" id="lic-file" accept=".lic,.txt" class="hidden">
+        </div>
+        <p class="muted" id="lic-machine"></p>
+        <div id="lic-result" class="lic-result hidden"></div>
+      </div>
+      <div class="modal-foot">
+        <button id="btn-lic-deactivate" class="btn danger hidden">Desactivar licencia</button>
+        <button id="btn-lic-cancel" class="btn">Cerrar</button>
+        <button id="btn-lic-activate" class="btn primary">Activar licencia</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="license-gate" class="license-gate hidden">
+    <div class="gate-box">
+      <div class="gate-logo">🛡️</div>
+      <h2>NEXALERT · Licencia vencida</h2>
+      <p id="gate-msg"></p>
+      <p class="gate-muted">Activa una licencia válida para volver a usar el programa.</p>
+      <button id="btn-gate-activate" class="btn primary">Activar licencia</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Cotización NEXUS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; padding: 32px; }
+  .page { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 44px 50px; box-shadow: 0 10px 40px rgba(15,23,42,.12); }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f172a; padding-bottom: 16px; }
+  .brand { font-size: 22px; font-weight: 800; color: #0f172a; }
+  .brand small { font-size: 13px; font-weight: 400; color: #64748b; display: block; }
+  .meta { font-size: 13px; color: #334155; text-align: right; line-height: 1.7; }
+  .meta b { color: #0f172a; }
+  h1 { font-size: 24px; color: #0f172a; margin: 24px 0 4px; }
+  .sub { font-size: 14px; color: #64748b; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; }
+  th { background: #0f172a; color: #fff; text-align: left; padding: 10px 12px; font-size: 13px; }
+  td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; color: #334155; }
+  .right { text-align: right; }
+  .total td { font-weight: 800; background: #f8fafc; font-size: 15px; color: #0f172a; }
+  .section { margin-top: 22px; font-size: 14px; color: #334155; line-height: 1.7; }
+  .section h3 { font-size: 14px; color: #0f172a; margin-bottom: 6px; }
+  .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 13.5px; color: #334155; line-height: 1.6; }
+  .valid { display: inline-block; background: #fef3c7; color: #b45309; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 20px; }
+  .sign { display: flex; gap: 40px; margin-top: 40px; }
+  .sign > div { flex: 1; }
+  .sign .line { border-top: 1px solid #0f172a; margin-top: 60px; padding-top: 8px; font-size: 12px; color: #64748b; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="head">
+      <div class="brand">NEXUS<small>Nexus Software RD · Servicio de kardex y control de empleados</small></div>
+      <div class="meta"><b>Cotización Nº</b> [001]<br /><b>Fecha:</b> [__/__/____]<br /><b>Válida hasta:</b> <span class="valid">15 días</span></div>
+    </div>
+
+    <h1>Oferta de servicio</h1>
+    <div class="sub">Kardex digital de empleados · cumplimiento con el Ministerio de Trabajo (Ley 16-92)</div>
+
+    <div class="box">
+      <b>Cliente:</b> [Nombre de la empresa] &nbsp;·&nbsp; <b>RNC:</b> [RNC]<br />
+      <b>Contacto:</b> [Nombre] &nbsp;·&nbsp; <b>Teléfono:</b> [Teléfono]<br />
+      <b>Dirección:</b> [Dirección] &nbsp;·&nbsp; <b>Nº de empleados:</b> [____]
+    </div>
+
+    <table>
+      <tr><th>Servicio</th><th class="right">Descripción</th><th class="right">Monto</th></tr>
+      <tr><td>Instalación inicial</td><td>Configuración, carga de empleados y capacitación</td><td class="right">RD$ [3,000]</td></tr>
+      <tr><td>Plan mensual</td><td>[Micro / Pyme / Empresa] — kardex digital y soporte</td><td class="right">RD$ [5,000]</td></tr>
+      <tr class="total"><td colspan="2">Total inicial (instalación + primer mes)</td><td class="right">RD$ [8,000]</td></tr>
+      <tr><td colspan="2">Mensualidad siguiente (mes 2 en adelante)</td><td class="right">RD$ [5,000]</td></tr>
+    </table>
+
+    <div class="section">
+      <h3>Incluye</h3>
+      · Registro digital de altas, bajas, salarios, vacaciones y licencias de empleados.<br />
+      · Control mensual de tu cuota y recordatorio de pagos.<br />
+      · Exportación de reportes (Excel) para tu contabilidad.<br />
+      · Soporte técnico por WhatsApp en horario laboral.<br />
+      · 15 días de prueba sin compromiso (la oferta aplica sobre la prueba).
+    </div>
+
+    <div class="box"><b>Forma de pago:</b> Efectivo o transferencia. La instalación se agenda al recibir el primer pago. La mensualidad vence cada [1º] de mes.</div>
+
+    <p style="font-size:13px; color:#64748b;">Los precios pueden variar según la cantidad de empleados y los servicios adicionales. Esta cotización no constituye un contrato hasta la firma de ambos.</p>
+
+    <div class="sign">
+      <div class="line">Firma del cliente</div>
+      <div class="line">Nexus Software RD</div>
+    </div>
+  </div>
+</body>
+</html>
