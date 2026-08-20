@@ -21,8 +21,6 @@ contextBridge.exposeInMainWorld('api', {
   },
   reportes: {
     list: () => ipcRenderer.invoke('reportes:list'),
-    archived: () => ipcRenderer.invoke('reportes:archived'),
-    autoArchive: () => ipcRenderer.invoke('reportes:autoArchive'),
     save: (r) => ipcRenderer.invoke('reportes:save', r),
     setEstado: (id, estado) => ipcRenderer.invoke('reportes:setEstado', id, estado),
     setTecnico: (id, tecnicoId) => ipcRenderer.invoke('reportes:setTecnico', id, tecnicoId),

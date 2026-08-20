@@ -38,7 +38,6 @@ const WA_LABELS = {
 };
 
 async function refreshAll() {
-  await window.api.reportes.autoArchive().catch(() => {});
   const [c, e, r, t, s] = await Promise.all([
     window.api.clients.list(),
     window.api.equipos.list(),
@@ -56,7 +55,6 @@ async function refreshAll() {
   renderClients();
   renderEquipos();
   renderReportes();
-  renderArchived();
   renderTecnicos();
   renderPanel();
   updatePendingBar();
@@ -68,9 +66,6 @@ function activarTab(name) {
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
   if (name === 'mensajes') {
     refreshMensajes();
-  }
-  if (name === 'archivados') {
-    renderArchived();
   }
 }
 
@@ -1736,45 +1731,6 @@ function renderReportes() {
     '<div class="rp-grup">📅 ' + esc(dia === 'sin-fecha' ? 'Sin fecha' : fmtDiaGrupo(dia)) + ' <span class="rp-grup-count">' + grupos[dia].length + '</span></div>'
     + grupos[dia].map(reporteCard).join('')
   ).join('') || '<div class="empty">Sin reportes todavía.</div>';
-}
-
-let stateArchived = [];
-async function renderArchived() {
-  try {
-    const res = await window.api.reportes.archived();
-    stateArchived = res.data || [];
-  } catch (e) { stateArchived = []; }
-  const rows = stateArchived;
-  $('#ar-count').textContent = rows.length + ' archivado(s)';
-  if (!rows.length) {
-    $('#ar-list').innerHTML = '<div class="empty">Sin reportes archivados.</div>';
-    return;
-  }
-  const grupos = {};
-  for (const r of rows) {
-    const mes = String(r.resuelto_at || r.fecha || '').slice(0, 7) || 'sin-fecha';
-    (grupos[mes] = grupos[mes] || []).push(r);
-  }
-  $('#ar-list').innerHTML = Object.keys(grupos).map((mes) =>
-    '<div class="rp-grup">📁 ' + esc(mes) + ' <span class="rp-grup-count">' + grupos[mes].length + '</span></div>'
-    + grupos[mes].map((r) => {
-      const fotos = Array.isArray(r.adjuntos) ? r.adjuntos.filter((a) => /\.(jpg|jpeg|png|gif|webp|bmp|mp4|mov)$/i.test(a)) : [];
-      return `<div class="card" data-id="${r.id}">
-        <div class="card-head"><span class="badge badge-${r.estado}">${ESTADO_LABEL[r.estado] || r.estado}</span> <span class="card-id">#${r.id}</span></div>
-        <div class="card-body">
-          <div class="card-row"><span class="lbl">Cliente:</span> ${esc(r.cliente_nombre || r.client_nombre || '—')}</div>
-          <div class="card-row"><span class="lbl">Equipo:</span> ${esc((r.equipos || []).map((x) => x.nombre).join(', ') || r.equipo_nombre || '—')}</div>
-          <div class="card-row"><span class="lbl">Problema:</span> ${esc(r.descripcion || '—')}</div>
-          <div class="card-row"><span class="lbl">Técnico:</span> ${esc(r.tecnico_nombre || '—')}</div>
-          <div class="card-row"><span class="lbl">Resuelto:</span> ${esc(r.resuelto_at ? r.resuelto_at.slice(0, 16) : '—')}</div>
-        </div>
-        <div class="card-foot">
-          <button class="btn small primary" data-action="restaurar-reporte" data-id="${r.id}">↩ Restaurar</button>
-          ${fotos.length ? '<button class="btn small" data-action="ver-fotos" data-id="' + r.id + '">🖼️ ' + fotos.length + '</button>' : ''}
-        </div>
-      </div>`;
-    }).join('')
-  ).join('');
 }
 
 function renderGrupoList(query) {

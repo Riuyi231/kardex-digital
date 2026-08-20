@@ -799,27 +799,6 @@ function registerIpc() {
     return { ok: true, data: attachEquipos(rows) };
   });
 
-  ipcMain.handle('reportes:archived', () => {
-    db.autoArchiveResolved();
-    const rows = db.all(`SELECT r.*,
-      COALESCE(c.nombre, r.client_nombre) AS cliente_nombre,
-      COALESCE(e.nombre, r.equipo_nombre) AS equipo_nombre,
-      c.contacto AS cliente_contacto,
-      c.telefono AS cliente_telefono,
-      c.email AS cliente_email
-      FROM reportes r
-      LEFT JOIN clients c ON c.id = r.client_id
-      LEFT JOIN equipos e ON e.id = r.equipo_id
-      WHERE r.deleted = 0 AND r.archivado = 1
-      ORDER BY r.resuelto_at DESC, r.id DESC`);
-    return { ok: true, data: attachEquipos(rows) };
-  });
-
-  ipcMain.handle('reportes:autoArchive', () => {
-    const count = db.autoArchiveResolved();
-    return { ok: true, archived: count };
-  });
-
   ipcMain.handle('reportes:historial', (e, id) => {
     const rows = db.all('SELECT * FROM reporte_eventos WHERE reporte_id = ? ORDER BY id ASC', [id]);
     return { ok: true, data: rows };
