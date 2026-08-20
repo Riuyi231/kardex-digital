@@ -1023,6 +1023,52 @@
     }
   }
 
+  /* ========== ARCHIVADOS ========== */
+  async function abrirArchivados() {
+    $('#home').classList.add('hidden');
+    $('#detalle').classList.add('hidden');
+    $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
+    $('#archivados-section').classList.remove('hidden');
+    state.view = 'archivados';
+    window.scrollTo(0, 0);
+    const sec = $('#archivados-section');
+    sec.innerHTML = '<div class="cargando">Cargando archivados...</div>';
+    if (!navigator.onLine) {
+      sec.innerHTML = '<div class="vacio"><p>Sin conexion.</p></div>';
+      return;
+    }
+    try {
+      await api('/api/reportes/auto-archive', { method: 'POST' }).catch(() => {});
+      const res = await api('/api/reportes/archived');
+      const rows = res.data || [];
+      if (!rows.length) {
+        sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados</h2></div>'
+          + '<div class="vacio"><p>No hay reportes archivados.</p><p class="hint">Los reportes resueltos con mas de 24h se archivan automaticamente.</p></div>';
+        $('#btn-arch-back').addEventListener('click', irInicio);
+        return;
+      }
+      const rpRows = rows.map((r) => {
+        const eqTxt = r.equipo_nombre || 'Equipo';
+        return '<div class="rp-card" data-id="' + r.id + '" data-goto="arch-detalle">'
+          + '<div class="head"><div class="cliente">' + esc(r.client_nombre || 'Cliente') + '</div>' + badgeEstado(r.estado) + '</div>'
+          + '<div class="equipo">' + esc(eqTxt) + '</div>'
+          + '<div class="descripcion">' + esc(r.descripcion || '') + '</div>'
+          + '<div class="meta"><span class="tecnico-asignado">' + (r.tecnico_nombre ? '\ud83d\udc77 ' + esc(r.tecnico_nombre) : '') + '</span> <span class="fecha">Resuelto: ' + fechaLarga(r.resuelto_at || r.fecha) + '</span></div>'
+          + '</div>';
+      }).join('');
+      sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados (' + rows.length + ')</h2></div>'
+          + '<div class="vacio"><p class="hint">Reportes resueltos con mas de 24h. Se archivan automaticamente.</p></div>'
+          + '<div id="arch-lista">' + rpRows + '</div>';
+      $('#btn-arch-back').addEventListener('click', irInicio);
+      sec.querySelectorAll('.rp-card[data-goto="arch-detalle"]').forEach((el) => el.addEventListener('click', () => {
+        abrirDetalle(Number(el.dataset.id));
+      }));
+    } catch (e) {
+      sec.innerHTML = '<div class="vacio"><p>Error: ' + esc(e.message) + '</p></div>';
+    }
+  }
+
   /* ========== MONITOREO (GERENTE) ========== */
   async function abrirMonitoreo() {
     $('#home').classList.add('hidden');
@@ -1354,6 +1400,7 @@
     $('#detalle').classList.add('hidden');
     $('#dashboard-section').classList.add('hidden');
     $('#monitoreo-section').classList.add('hidden');
+    $('#archivados-section').classList.add('hidden');
     $('#home').classList.remove('hidden');
     state.detalle = null;
     state.view = 'home';
@@ -1409,7 +1456,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.2';
+  const CURRENT_APP_VERSION = '1.5.3';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1617,6 +1664,7 @@
   $('#btn-theme').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); toggleTheme(); });
   $('#btn-stats').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirDashboard(); });
   $('#btn-monitoreo').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirMonitoreo(); });
+  $('#btn-archivados').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirArchivados(); });
   $('#btn-refresh').addEventListener('click', async () => {
     $('#top-dropdown').classList.add('hidden');
     const btn = $('#btn-refresh');
@@ -1748,6 +1796,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 

@@ -794,8 +794,30 @@ function registerIpc() {
       FROM reportes r
       LEFT JOIN clients c ON c.id = r.client_id
       LEFT JOIN equipos e ON e.id = r.equipo_id
+      WHERE r.deleted = 0 AND r.archivado = 0
       ORDER BY r.fecha DESC, r.id DESC`);
     return { ok: true, data: attachEquipos(rows) };
+  });
+
+  ipcMain.handle('reportes:archived', () => {
+    db.autoArchiveResolved();
+    const rows = db.all(`SELECT r.*,
+      COALESCE(c.nombre, r.client_nombre) AS cliente_nombre,
+      COALESCE(e.nombre, r.equipo_nombre) AS equipo_nombre,
+      c.contacto AS cliente_contacto,
+      c.telefono AS cliente_telefono,
+      c.email AS cliente_email
+      FROM reportes r
+      LEFT JOIN clients c ON c.id = r.client_id
+      LEFT JOIN equipos e ON e.id = r.equipo_id
+      WHERE r.deleted = 0 AND r.archivado = 1
+      ORDER BY r.resuelto_at DESC, r.id DESC`);
+    return { ok: true, data: attachEquipos(rows) };
+  });
+
+  ipcMain.handle('reportes:autoArchive', () => {
+    const count = db.autoArchiveResolved();
+    return { ok: true, archived: count };
   });
 
   ipcMain.handle('reportes:historial', (e, id) => {
@@ -1141,11 +1163,10 @@ function registerIpc() {
   });
 
   ipcMain.handle('reportes:delete', (e, id) => {
-    db.run('DELETE FROM reporte_eventos WHERE reporte_id = ?', [id]);
-    db.run('DELETE FROM reporte_equipos WHERE reporte_id = ?', [id]);
-    db.run('DELETE FROM reportes WHERE id = ?', [id]);
+    const now = new Date().toISOString();
+    db.run('UPDATE reportes SET deleted = 1, updated_at = ? WHERE id = ?', [now, id]);
     db.run('INSERT INTO sync_tombstones (reporte_id, updated_at) VALUES (?, ?) ON CONFLICT(reporte_id) DO UPDATE SET updated_at = excluded.updated_at',
-      [id, new Date().toISOString()]);
+      [id, now]);
     return { ok: true };
   });
 

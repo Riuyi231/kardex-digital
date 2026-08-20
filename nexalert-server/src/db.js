@@ -578,6 +578,22 @@ function getStatsGlobal() {
   };
 }
 
+function autoArchiveResolved() {
+  const ahora = nowUTC();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  const rows = db.prepare(`
+    SELECT id FROM reportes WHERE deleted = 0 AND archivado = 0 AND estado = 'resuelto' AND resuelto_at IS NOT NULL AND resuelto_at <= ?
+  `).all(cutoff);
+  const st = db.prepare('UPDATE reportes SET archivado = 1, updated_at = ? WHERE id = ?');
+  let count = 0;
+  for (const r of rows) {
+    st.run(ahora, r.id);
+    seq('reporte_archive', r.id, '');
+    count++;
+  }
+  return count;
+}
+
 module.exports = {
   db, init, nowUTC, hashPass, verifyPass, seq, lastSeq,
   getSetting, setSetting, reportePublico, arrAdjuntos,
@@ -585,5 +601,5 @@ module.exports = {
   addFoto, deleteFoto, fotoPublico, fotosDeReporte, fotosCount,
   getHistorial, setUbicacion, getStats, registerPushToken, getPushTokens, getGerentePushTokens,
   crearReporte, getReportesParaRecordatorio, logReminder, cleanupOldReminders,
-  getTecnicosList, getReportesAll, asignarReporte, getStatsGlobal
+  getTecnicosList, getReportesAll, asignarReporte, getStatsGlobal, autoArchiveResolved
 };

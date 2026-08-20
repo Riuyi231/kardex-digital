@@ -127,6 +127,29 @@ app.post('/api/reportes/:id/asignar', a.requireAuth('tecnico'), requireGerente, 
   }
 });
 
+app.get('/api/reportes/archived', a.requireAuth('tecnico'), (req, res) => {
+  try {
+    const rows = d.db.prepare(`
+      SELECT r.*, (SELECT COUNT(*) FROM fotos f WHERE f.reporte_id = r.id) AS fotos_count
+      FROM reportes r
+      WHERE r.deleted = 0 AND r.archivado = 1
+      ORDER BY r.resuelto_at DESC, r.id DESC
+    `).all();
+    res.json({ ok: true, data: rows.map((r) => ({ ...d.reportePublico(r), fotos_count: Number(r.fotos_count || 0) })) });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/reportes/auto-archive', a.requireAuth('tecnico'), (req, res) => {
+  try {
+    const archived = d.autoArchiveResolved();
+    res.json({ ok: true, archived });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/stats/global', a.requireAuth('tecnico'), requireGerente, (req, res) => {
   try {
     res.json({ ok: true, data: d.getStatsGlobal() });
@@ -377,6 +400,10 @@ app.post('/api/sync', a.requireDevice, (req, res) => {
       } else if (l.tipo === 'ubicacion') {
         const extra = JSON.parse(l.extra || '{}');
         cambios.push({ seq: l.seq, tipo: 'ubicacion', reporte_id: l.ref_id, detalle: l.extra || '{}' });
+      } else if (l.tipo === 'reporte_delete') {
+        cambios.push({ seq: l.seq, tipo: 'reporte_delete', reporte_id: l.ref_id });
+      } else if (l.tipo === 'reporte_archive') {
+        cambios.push({ seq: l.seq, tipo: 'reporte_archive', reporte_id: l.ref_id });
       }
     }
     const nuevoSeq = d.lastSeq();
@@ -462,7 +489,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -474,7 +501,17 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('Primer paso (NexAlert): registrar dispositivo en /api/device/register y guardar deviceToken en settings.');
   setInterval(checkReminders, 5 * 60 * 1000);
   setTimeout(checkReminders, 10 * 1000);
+  setInterval(() => {
+    try {
+      const n = d.autoArchiveResolved();
+      if (n > 0) console.log('AUTO-ARCHIVE: ' + n + ' reportes archivados');
+    } catch (e) { console.log('AUTO-ARCHIVE ERR: ' + e.message); }
+  }, 60 * 60 * 1000);
+  setTimeout(() => {
+    try { d.autoArchiveResolved(); } catch (e) { /* noop */ }
+  }, 30 * 1000);
 });
+
 
 
 

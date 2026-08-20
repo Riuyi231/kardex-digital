@@ -48,6 +48,7 @@
     <button class="tab" data-tab="clientes">👥 Clientes</button>
     <button class="tab" data-tab="equipos">🖥️ Equipos</button>
     <button class="tab" data-tab="reportes">📋 Reportes</button>
+    <button class="tab" data-tab="archivados">🗄️ Archivados</button>
     <button class="tab" data-tab="mensajes">💬 Mensajes <span id="tab-mensajes-badge" class="tab-badge hidden"></span></button>
     <button class="tab" data-tab="tecnicos">👷 Técnicos</button>
   </nav>
@@ -102,6 +103,14 @@
     </div>
     <div id="rp-count" class="count"></div>
     <div id="rp-list" class="cards"></div>
+  </main>
+
+  <main id="view-archivados" class="view">
+    <div class="toolbar">
+      <span style="font-size:14px;color:#5f6368">Reportes resueltos con mas de 24h se archivan automaticamente</span>
+    </div>
+    <div id="ar-count" class="count"></div>
+    <div id="ar-list" class="cards"></div>
   </main>
 
   <main id="view-mensajes" class="view">

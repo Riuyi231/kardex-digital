@@ -209,6 +209,19 @@ function aplicarCambios(cambios) {
           aplicados++;
         }
       } catch (e) { /* noop */ }
+    } else if (c.tipo === 'reporte_delete') {
+      try {
+        db.run('DELETE FROM reporte_eventos WHERE reporte_id = ?', [c.reporte_id]);
+        db.run('DELETE FROM reporte_equipos WHERE reporte_id = ?', [c.reporte_id]);
+        db.run('DELETE FROM reportes WHERE id = ?', [c.reporte_id]);
+        aplicados++;
+      } catch (e) { /* noop */ }
+    } else if (c.tipo === 'reporte_archive') {
+      try {
+        const now = db.nowDateTime();
+        db.run('UPDATE reportes SET archivado = 1, archivado_at = ?, updated_at = ? WHERE id = ?', [now, now, c.reporte_id]);
+        aplicados++;
+      } catch (e) { /* noop */ }
     }
   }
   if (esperaIds.length) {

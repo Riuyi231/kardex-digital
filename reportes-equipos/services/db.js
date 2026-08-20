@@ -238,6 +238,7 @@ function migrate() {
   if (!rpCols.includes('lng')) STATE.db.run('ALTER TABLE reportes ADD COLUMN lng REAL');
   if (!rpCols.includes('client_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN client_nombre TEXT');
   if (!rpCols.includes('equipo_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN equipo_nombre TEXT');
+  if (!rpCols.includes('deleted')) STATE.db.run('ALTER TABLE reportes ADD COLUMN deleted INTEGER DEFAULT 0');
   const tcCols = tableColumns('tecnicos');
   if (!tcCols.includes('sync_pass')) STATE.db.run('ALTER TABLE tecnicos ADD COLUMN sync_pass TEXT');
   if (!tcCols.includes('rol')) STATE.db.run("ALTER TABLE tecnicos ADD COLUMN rol TEXT DEFAULT 'tecnico'");
@@ -256,4 +257,14 @@ function migrate() {
   }
 }
 
-module.exports = { open, close, all, get, run, nowStamp, nowDateTime, getSetting, setSetting, shiftUtcToLocal };
+function autoArchiveResolved() {
+  const now = nowDateTime();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  const rows = all(`SELECT id FROM reportes WHERE deleted = 0 AND archivado = 0 AND estado = 'resuelto' AND resuelto_at IS NOT NULL AND resuelto_at <= ?`, [cutoff]);
+  for (const r of rows) {
+    run('UPDATE reportes SET archivado = 1, archivado_at = ?, updated_at = ? WHERE id = ?', [now, now, r.id]);
+  }
+  return rows.length;
+}
+
+module.exports = { open, close, all, get, run, nowStamp, nowDateTime, getSetting, setSetting, shiftUtcToLocal, autoArchiveResolved };
