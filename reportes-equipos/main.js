@@ -794,7 +794,7 @@ function registerIpc() {
       FROM reportes r
       LEFT JOIN clients c ON c.id = r.client_id
       LEFT JOIN equipos e ON e.id = r.equipo_id
-      WHERE r.deleted = 0 AND r.archivado = 0
+      WHERE r.deleted = 0
       ORDER BY r.fecha DESC, r.id DESC`);
     return { ok: true, data: attachEquipos(rows) };
   });
