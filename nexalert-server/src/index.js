@@ -47,12 +47,23 @@ app.post('/api/device/register', (req, res) => {
 const ESTADOS_VALIDOS = ['abierto', 'en_proceso', 'resuelto', 'espera_repuesto', 'espera_cliente'];
 
 app.get('/api/reportes', a.requireAuth('tecnico'), (req, res) => {
-  const rows = d.db.prepare(`
-    SELECT r.*, (SELECT COUNT(*) FROM fotos f WHERE f.reporte_id = r.id) AS fotos_count
-    FROM reportes r
-    WHERE r.deleted = 0 AND r.archivado = 0 AND r.tecnico_id = ?
-    ORDER BY r.fecha DESC, r.id DESC
-  `).all(req.user.sub);
+  const isGerente = (req.user.rol || 'tecnico') === 'gerente';
+  let rows;
+  if (isGerente) {
+    rows = d.db.prepare(`
+      SELECT r.*, (SELECT COUNT(*) FROM fotos f WHERE f.reporte_id = r.id) AS fotos_count
+      FROM reportes r
+      WHERE r.deleted = 0 AND r.archivado = 0
+      ORDER BY r.fecha DESC, r.id DESC
+    `).all();
+  } else {
+    rows = d.db.prepare(`
+      SELECT r.*, (SELECT COUNT(*) FROM fotos f WHERE f.reporte_id = r.id) AS fotos_count
+      FROM reportes r
+      WHERE r.deleted = 0 AND r.archivado = 0 AND r.tecnico_id = ?
+      ORDER BY r.fecha DESC, r.id DESC
+    `).all(req.user.sub);
+  }
   res.json({ ok: true, data: rows.map((r) => ({ ...d.reportePublico(r), fotos_count: Number(r.fotos_count || 0) })) });
 });
 
@@ -469,6 +480,19 @@ app.post('/api/push/test', a.requireAuth('tecnico'), async (req, res) => {
   }
 });
 
+app.post('/api/push/notify-update', async (req, res) => {
+  try {
+    const tokens = d.getPushTokens();
+    if (!tokens.length) return res.json({ ok: true, msg: 'No hay tokens', sent: 0 });
+    const version = APP_VERSION;
+    const url = APP_APK_URL;
+    await sendPush(tokens, 'NexAlert - Actualizacion disponible', 'NexAlert v' + version + ' ya esta disponible. Toca para descargar.', { tipo: 'update', version, downloadUrl: url });
+    res.json({ ok: true, sent: tokens.length, version });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
 async function checkReminders() {
   try {
     const reportes = d.getReportesParaRecordatorio();
@@ -489,7 +513,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.5';
+const APP_VERSION = '1.5.6';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -511,6 +535,7 @@ app.listen(PORT, '0.0.0.0', () => {
     try { d.autoArchiveResolved(); } catch (e) { /* noop */ }
   }, 30 * 1000);
 });
+
 
 
 

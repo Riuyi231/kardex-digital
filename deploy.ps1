@@ -23,3 +23,14 @@ git push
 Write-Host ""
 Write-Host "Deploy v$newVersion enviado!" -ForegroundColor Green
 Write-Host "Progreso: https://github.com/Riuyi231/nexalert/actions" -ForegroundColor Yellow
+
+Write-Host ""
+Write-Host "Esperando 30s para que el server se actualice..." -ForegroundColor DarkYellow
+Start-Sleep -Seconds 30
+
+try {
+    $resp = Invoke-RestMethod -Uri "https://nexalert.duckdns.org/api/push/notify-update" -Method POST -ErrorAction Stop
+    Write-Host "Push de actualizacion enviado: v$newVersion" -ForegroundColor Green
+} catch {
+    Write-Host "No se pudo enviar push de actualizacion (el server puede estar actualizandose)" -ForegroundColor DarkYellow
+}

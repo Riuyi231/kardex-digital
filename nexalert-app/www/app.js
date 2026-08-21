@@ -1307,19 +1307,27 @@
   }
 
   /* ========== NUEVO REPORTE ========== */
+  let _formCardOriginalHTML = null;
 
   function abrirNuevoReporte() {
     $('#home').classList.add('hidden');
     $('#dashboard-section').classList.add('hidden');
     $('#monitoreo-section').classList.add('hidden');
     $('#detalle').classList.add('hidden');
+    $('#archivados-section').classList.add('hidden');
+    const formCard = $('#nuevo-reporte .form-card');
+    if (!_formCardOriginalHTML && formCard) _formCardOriginalHTML = formCard.innerHTML;
+    if (_formCardOriginalHTML && formCard) {
+      formCard.innerHTML = _formCardOriginalHTML;
+      $('#form-nuevo').addEventListener('submit', guardarNuevoReporte);
+    }
     $('#nuevo-reporte').classList.remove('hidden');
     state.view = 'nuevo';
-    $('#nf-cliente').value = '';
-    $('#nf-equipo').value = '';
-    $('#nf-descripcion').value = '';
-    $('#nf-prioridad').value = 'normal';
-    $('#nf-submit').disabled = false;
+    if ($('#nf-cliente')) $('#nf-cliente').value = '';
+    if ($('#nf-equipo')) $('#nf-equipo').value = '';
+    if ($('#nf-descripcion')) $('#nf-descripcion').value = '';
+    if ($('#nf-prioridad')) $('#nf-prioridad').value = 'normal';
+    if ($('#nf-submit')) $('#nf-submit').disabled = false;
     const wrap = $('#nf-tecnico-wrap');
     const sel = $('#nf-tecnico');
     if (state.rol === 'gerente') {
@@ -1456,7 +1464,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.5';
+  const CURRENT_APP_VERSION = '1.5.6';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1495,9 +1503,26 @@
       PushNotifications.addListener('pushNotificationReceived', (notif) => {
         toast(notif.title || 'Nueva notificación');
       });
-      PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      PushNotifications.addListener('pushNotificationActionPerformed', async (action) => {
         const data = action.notification?.data;
-        if (data && data.reporteId) {
+        if (data && data.tipo === 'update' && data.downloadUrl) {
+          if (NATIVO && window.Capacitor.Plugins.App) {
+            try { await window.Capacitor.Plugins.App.moveToForeground(); } catch (_) {}
+          }
+          setTimeout(() => {
+            if (confirm('NexAlert v' + (data.version || '') + ' disponible. Descargar actualizacion?')) {
+              window.open(data.downloadUrl, '_system');
+            }
+          }, 500);
+        } else if (data && data.reporteId) {
+          if (NATIVO && window.Capacitor.Plugins.App) {
+            try { await window.Capacitor.Plugins.App.moveToForeground(); } catch (_) {}
+          }
+          if (state.view === 'login') {
+            const u = usuario();
+            if (u) mostrarApp(u);
+          }
+          if (state.view !== 'home') irInicio();
           abrirDetalle(Number(data.reporteId));
         }
       });
@@ -1796,6 +1821,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
