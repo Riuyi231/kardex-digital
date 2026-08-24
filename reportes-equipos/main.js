@@ -470,18 +470,16 @@ function buildReportMsg(client, equipos, reporte, s) {
     : ['Equipo: (no especificado)'];
   const lines = [
     '🚨 REPORTE DE FALLA',
+    'Cliente: ' + client.nombre,
     'Prioridad: ' + prioIcon + ' ' + prio,
-    'Empresa: ' + client.nombre,
     client.contacto ? 'Contacto: ' + client.contacto : '',
     client.telefono ? 'Teléfono: ' + client.telefono : '',
     'Fecha: ' + reporte.fecha,
     ...eqLines,
-    '',
     'Problema:',
     reporte.descripcion,
     reporte.solucion ? '✅ Solución: ' + reporte.solucion : '',
     adj.length ? '📎 Se adjuntan ' + adj.length + ' foto(s) del equipo' : '',
-    '',
     '— ' + (s.negocio || 'REPORTES')
   ];
   return lines.filter((l) => l !== '').join('\n');
@@ -1139,6 +1137,31 @@ function registerIpc() {
       addReporteEvent(id, 'tecnico', rp.tecnico_nombre ? 'Técnico ' + rp.tecnico_nombre + ' desasignado.' : 'Asignación de técnico quitada.');
     }
     return { ok: true, data: db.get('SELECT * FROM reportes WHERE id = ?', [id]) };
+  });
+
+  ipcMain.handle('reportes:asignarWhatsApp', async (e, id) => {
+    try {
+      const rp = db.get('SELECT * FROM reportes WHERE id = ?', [id]);
+      if (!rp) return { ok: false, error: 'Reporte no encontrado' };
+      if (state.wa.status !== 'ready') return { ok: false, error: 'WhatsApp no conectado' };
+      if (!rp.grupo_id && !rp.grupo_nombre) return { ok: false, error: 'Sin grupo asignado' };
+      const cliente = rp.client_nombre || 'Cliente';
+      const equipo = rp.equipo_nombre || '';
+      const tecnico = rp.tecnico_nombre || 'Sin asignar';
+      const desc = rp.descripcion || '';
+      const msg = '👷 *ASIGNACIÓN DE TÉCNICO*\n'
+        + '*Cliente:* ' + cliente + '\n'
+        + '*Reporte:* #' + rp.id + '\n'
+        + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+        + '*Problema:* ' + desc.slice(0, 120) + (desc.length > 120 ? '...' : '') + '\n'
+        + '*Técnico asignado:* ' + tecnico + '\n'
+        + '— ' + (db.get('SELECT val FROM settings WHERE key = ?', ['negocio']) || {}).val || 'NexAlert';
+      const sentTo = await whatsapp.sendToGroup(rp.grupo_id || rp.grupo_nombre, msg);
+      addReporteEvent(id, 'enviado', 'Notificación de asignación enviada al grupo ' + sentTo + '.');
+      return { ok: true, data: { sentTo, message: msg } };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   ipcMain.handle('reportes:delete', (e, id) => {

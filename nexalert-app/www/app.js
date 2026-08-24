@@ -375,6 +375,44 @@
     pintarLista();
   }
 
+  /* ========== CARGAR TECNICOS (GERENTE) ========== */
+  async function cargarTecnicos() {
+    try {
+      const data = await api('/api/tecnicos');
+      state.tecnicos = (data.data || []).filter((t) => t.rol !== 'gerente' && t.activo !== 0);
+    } catch (e) { /* noop */ }
+  }
+
+  async function asignarDesdeLista(reporteId, selectEl) {
+    const tcId = selectEl.value ? Number(selectEl.value) : null;
+    const tcName = selectEl.value ? selectEl.options[selectEl.selectedIndex].text : '';
+    try {
+      await api('/api/reportes/' + reporteId + '/asignar', { method: 'POST', body: JSON.stringify({ tecnico_id: tcId, tecnico_nombre: tcName }) });
+      toast('Asignado a ' + (tcName || 'Sin asignar'), 'ok');
+      const rp = state.reportes.find((r) => r.id === reporteId);
+      if (rp) { rp.tecnico_id = tcId; rp.tecnico_nombre = tcName; }
+      pintarLista();
+      selectEl.closest('.asignar-wrap').classList.add('hidden');
+      if (tcId) {
+        const cliente = rp ? (rp.client_nombre || 'Cliente') : 'Cliente';
+        const equipo = rp ? (rp.equipo_nombre || '') : '';
+        const desc = rp ? (rp.descripcion || '') : '';
+        const msg = '\ud83d\udc77 *ASIGNACI\u00d3N DE T\u00c9CNICO*\n'
+          + '*Cliente:* ' + cliente + '\n'
+          + '*Reporte:* #' + reporteId + '\n'
+          + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+          + '*Problema:* ' + desc.slice(0, 120) + (desc.length > 120 ? '...' : '') + '\n'
+          + '*T\u00e9cnico asignado:* ' + tcName + '\n'
+          + '\u2014 NexAlert';
+        try {
+          const Share = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+          if (Share) await Share.share({ title: 'Asignaci\u00f3n #' + reporteId, text: msg, dialogTitle: 'Enviar asignaci\u00f3n' });
+          else if (navigator.share) await navigator.share({ title: 'Asignaci\u00f3n #' + reporteId, text: msg });
+        } catch (e) { /* usuario cancelo */ }
+      }
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
   /* ========== FILTROS ========== */
   function filtrar() {
     const q = ($('#buscar').value || '').toLowerCase().trim();
@@ -417,6 +455,8 @@
           ${r.lat != null ? '<span class="map-badge">' + ic('map') + '</span>' : ''}
           <span class="fecha">${fechaLarga(r.fecha)}</span>
         </div>
+        ${state.rol === 'gerente' && state.tecnicos && state.tecnicos.length ? '<div class="asignar-wrap hidden" data-asignar-for="' + r.id + '"><select class="asignar-select" data-report-id="' + r.id + '"><option value="">Sin asignar</option>' + state.tecnicos.map((t) => '<option value="' + t.id + '"' + (Number(r.tecnico_id) === t.id ? ' selected' : '') + '>' + esc(t.nombre) + '</option>').join('') + '</select><button class="asignar-ok" data-report-id="' + r.id + '">OK</button><button class="asignar-cancel" data-report-id="' + r.id + '">X</button></div>' : ''}
+        ${state.rol === 'gerente' ? '<div class="asignar-btn-wrap"><button class="asignar-btn" data-report-id="' + r.id + '">' + (r.tecnico_id ? '👷 ' + esc(r.tecnico_nombre || 'Cambiar') : '👷 Asignar') + '</button></div>' : ''}
       </div>`).join('');
   }
 
@@ -658,8 +698,8 @@
     const prioLabel = PRIO_LABEL[prio] || prio;
     const fecha = r.fecha || new Date().toLocaleDateString('es-ES');
     const msg = '\uD83D\uDEA8 *REPORTE DE FALLA*\n'
+      + '*Cliente:* ' + cliente + '\n'
       + '*Prioridad:* ' + prioLabel + '\n'
-      + '*Empresa:* ' + cliente + '\n'
       + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
       + '*Fecha:* ' + fecha + '\n'
       + '*Problema:*\n' + desc + '\n'
@@ -1280,6 +1320,24 @@
       toast('Reasignado a ' + (tcName || 'Sin asignar'), 'ok');
       if (state.gerenteDetalle) { state.gerenteDetalle.tecnico_id = tcId; state.gerenteDetalle.tecnico_nombre = tcName; }
       pintarDetalleGerente();
+      if (tcId && state.gerenteDetalle) {
+        const r = state.gerenteDetalle;
+        const cliente = r.client_nombre || 'Cliente';
+        const equipo = r.equipo_nombre || '';
+        const desc = (r.descripcion || '').slice(0, 120);
+        const msg = '\uD83D\uDC77 *ASIGNACI\u00D3N DE T\u00C9CNICO*\n'
+          + '*Cliente:* ' + cliente + '\n'
+          + '*Reporte:* #' + id + '\n'
+          + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+          + '*Problema:* ' + desc + (r.descripcion && r.descripcion.length > 120 ? '...' : '') + '\n'
+          + '*T\u00E9cnico asignado:* ' + tcName + '\n'
+          + '\u2014 NexAlert';
+        try {
+          const Share = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+          if (Share) await Share.share({ title: 'Asignaci\u00F3n #' + id, text: msg, dialogTitle: 'Enviar asignaci\u00F3n' });
+          else if (navigator.share) await navigator.share({ title: 'Asignaci\u00F3n #' + id, text: msg });
+        } catch (e) { /* usuario cancelo */ }
+      }
     } catch (e) { toast(e.message, 'err'); }
   }
 
@@ -1437,6 +1495,7 @@
     $('#filtro-hasta').value = '';
     irInicio();
     cargarReportes().catch((e) => toast(e.message, 'err'));
+    if (state.rol === 'gerente') cargarTecnicos().catch(() => {});
     processPendingQueue().catch(() => {});
     processFotoQueue().catch(() => {});
     actualizarBadgePendientes();
@@ -1464,19 +1523,23 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.7';
+  const CURRENT_APP_VERSION = '1.5.8';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
       const latest = data.data;
       if (latest && latest.version && latest.version !== CURRENT_APP_VERSION) {
-        toast('Nueva version v' + latest.version + ' disponible', 'ok');
         if (NATIVO && latest.downloadUrl) {
+          toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
           setTimeout(() => {
-            if (confirm('NexAlert v' + latest.version + ' disponible. Descargar actualizacion?')) {
-              window.open(latest.downloadUrl, '_system');
+            const url = latest.downloadUrl;
+            if (confirm('NexAlert v' + latest.version + ' esta disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\nNueva version: v' + latest.version + '\n\nDescargar e instalar actualizacion?')) {
+              toast('Descargando actualizacion...', 'ok');
+              window.location.href = url;
             }
-          }, 3000);
+          }, 2000);
+        } else {
+          toast('Nueva version v' + latest.version + ' disponible', 'ok');
         }
       }
     } catch (e) { /* noop */ }
@@ -1788,6 +1851,30 @@
   $('#filtro-hasta').addEventListener('change', pintarLista);
 
   $('#lista').addEventListener('click', (ev) => {
+    const asignarBtn = ev.target.closest('.asignar-btn');
+    if (asignarBtn) {
+      ev.stopPropagation();
+      const reportId = Number(asignarBtn.dataset.reportId);
+      const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+      if (wrap) { wrap.classList.toggle('hidden'); wrap.querySelector('.asignar-select').focus(); }
+      return;
+    }
+    const asignarOk = ev.target.closest('.asignar-ok');
+    if (asignarOk) {
+      ev.stopPropagation();
+      const reportId = Number(asignarOk.dataset.reportId);
+      const sel = document.querySelector('.asignar-select[data-report-id="' + reportId + '"]');
+      if (sel) asignarDesdeLista(reportId, sel);
+      return;
+    }
+    const asignarCancel = ev.target.closest('.asignar-cancel');
+    if (asignarCancel) {
+      ev.stopPropagation();
+      const reportId = Number(asignarCancel.dataset.reportId);
+      const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+      if (wrap) wrap.classList.add('hidden');
+      return;
+    }
     const card = ev.target.closest('.rp-card');
     if (card) abrirDetalle(Number(card.dataset.id)).catch((e) => toast(e.message, 'err'));
   });
@@ -1821,6 +1908,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 

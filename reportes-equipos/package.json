@@ -1,6 +1,6 @@
 {
     "name":  "reportes-equipos",
-    "version":  "1.5.7",
+    "version":  "1.5.8",
     "description":  "Sistema de reportes de fallas de equipos con envío a grupos de WhatsApp",
     "main":  "main.js",
     "scripts":  {

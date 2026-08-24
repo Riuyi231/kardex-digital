@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
     save: (r) => ipcRenderer.invoke('reportes:save', r),
     setEstado: (id, estado) => ipcRenderer.invoke('reportes:setEstado', id, estado),
     setTecnico: (id, tecnicoId) => ipcRenderer.invoke('reportes:setTecnico', id, tecnicoId),
+    asignarWhatsApp: (id) => ipcRenderer.invoke('reportes:asignarWhatsApp', id),
     setArchivado: (id, archivado) => ipcRenderer.invoke('reportes:setArchivado', id, archivado),
     resolver: (id, solucion, adjuntosNuevos, adjuntosEliminados, adjuntosExistentes) => ipcRenderer.invoke('reportes:resolver', id, solucion, adjuntosNuevos, adjuntosEliminados, adjuntosExistentes),
     historial: (id) => ipcRenderer.invoke('reportes:historial', id),
