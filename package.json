@@ -1,0 +1,86 @@
+{
+  "name": "kardex-digital",
+  "version": "1.0.2",
+  "description": "Sistema de nomina / kardex para Recursos Humanos. Carga la cedula de identidad dominicana desde PDF, extrae los datos con OCR + codigo de barras, muestra vista previa editable y gestiona usuarios con roles (admin, editor, invitado).",
+  "main": "main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "tessdata": "node scripts/download-tessdata.js",
+    "make-test-cedula": "node scripts/make-test-cedula.js",
+    "smoke": "electron . --smoke",
+    "dist": "electron-builder --win nsis --x64 --ia32 && node scripts/clean-dist.js",
+    "dist:portable": "electron-builder --win portable --x64 --ia32 && node scripts/clean-dist.js",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "@zxing/library": "^0.21.3",
+    "bwip-js": "^4.11.2",
+    "docxtemplater": "^3.69.3",
+    "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
+    "jpeg-js": "^0.4.4",
+    "nodemailer": "^9.0.4",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "3.11.174",
+    "pizzip": "^3.2.0",
+    "pngjs": "^7.0.0",
+    "sql.js": "^1.12.0",
+    "tesseract.js": "^5.1.1"
+  },
+  "build": {
+    "appId": "com.kardex.digital",
+    "productName": "KARDEX Digital",
+    "asar": false,
+    "publish": {
+      "provider": "github",
+      "owner": "Riuyi231",
+      "repo": "kardex-digital",
+      "releaseType": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "services/**/*",
+      "resources/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "KARDEX Digital",
+      "uninstallDisplayName": "KARDEX Digital",
+      "installerIcon": null,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "KARDEX-Digital-Setup-${arch}.exe"
+    },
+    "portable": {
+      "artifactName": "KARDEX-Digital-portable-${arch}.exe"
+    }
+  }
+}

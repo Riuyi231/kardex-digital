@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>KARDEX Digital</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toasts"></div>
+
+  <!-- ===== LOGIN ===== -->
+  <section id="login-view" class="login-view">
+    <div class="login-card">
+      <div class="login-logo">
+        <img class="logo-img" src="logo.png" alt="KARDEX Digital" />
+        <div>
+          <h1>KARDEX <span>Digital</span></h1>
+          <p>Sistema de expedientes para Recursos Humanos</p>
+        </div>
+      </div>
+      <form id="login-form" autocomplete="off">
+        <label for="login-user">Usuario</label>
+        <input id="login-user" type="text" required placeholder="usuario" />
+        <label for="login-pass">Contraseña</label>
+        <input id="login-pass" type="password" required placeholder="••••••••" />
+        <div id="login-error" class="error-box hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Ingresar</button>
+      </form>
+      <div class="conn-status" id="conn-status"></div>
+      <div class="license-box" id="license-box">
+        <span class="license-text" id="license-text">Cargando licencia…</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-license">Activar licencia</button>
+      </div>
+      <button type="button" class="btn btn-ghost btn-block" id="btn-server-config">🌐 Conexión y servidor…</button>
+      <p class="login-hint">Acceso con roles: <b>admin</b> / <b>editor</b> / <b>invitado</b></p>
+    </div>
+  </section>
+
+  <!-- ===== APP ===== -->
+  <div id="app-view" class="app-view hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img class="logo-img" src="logo.png" alt="KARDEX Digital" />
+        <span>KARDEX Digital</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-view="empleados">📋 Empleados</button>
+        <button class="nav-item" data-view="inactivos">🗂️ Inactivos</button>
+        <button class="nav-item hidden" data-view="nomina" id="nav-nomina">💰 Nómina</button>
+        <button class="nav-item hidden" data-view="reportes" id="nav-reportes">📑 Reportes</button>
+        <button class="nav-item hidden" data-view="notificaciones" id="nav-notificaciones">🔔 Alertas <span id="notif-badge" class="notif-badge hidden">0</span></button>
+        <button class="nav-item hidden" data-view="correo" id="nav-correo">✉️ Correos</button>
+        <button class="nav-item hidden" data-view="usuarios" id="nav-usuarios">👥 Usuarios</button>
+        <button class="nav-item hidden" data-view="audit" id="nav-audit">🛡️ Bitácora</button>
+        <button class="nav-item hidden" data-view="sistema" id="nav-sistema">⚙️ Sistema</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <strong id="user-name">—</strong>
+          <span id="user-role-badge" class="role-badge">—</span>
+        </div>
+        <button class="btn btn-ghost btn-block" id="logout-btn">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- Empleados -->
+      <section id="view-empleados" class="view">
+        <header class="view-header">
+          <div>
+            <h2>Expedientes de empleados</h2>
+            <p id="employees-count"></p>
+          </div>
+          <div class="view-actions">
+            <input id="search-input" type="search" placeholder="Buscar por cédula, nombre, profesión…" />
+            <button class="btn btn-ghost hidden" id="btn-export-cedulas-pdf" title="Descargar un PDF con las cédulas de todos los empleados activos">PDF cédulas</button>
+            <button class="btn btn-ghost hidden" id="btn-import-excel-header" title="Importar empleados desde Excel">📤 Importar</button>
+            <button class="btn btn-primary hidden" id="btn-new-employee">+ Nuevo registro</button>
+          </div>
+        </header>
+        <div class="stats-grid">
+          <div class="card stat-card">
+            <div class="stat-label">Empleados activos</div>
+            <div class="stat-value stat-active" id="stat-activos">0</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Empleados inactivos</div>
+            <div class="stat-value stat-inactive" id="stat-inactivos">0</div>
+          </div>
+          <div class="card stat-card dept-card">
+            <div class="stat-label">Empleados por departamento</div>
+            <div id="dept-list" class="dept-list"></div>
+          </div>
+        </div>
+        <div class="card table-card">
+          <table class="table" id="employees-table">
+            <thead>
+              <tr>
+                <th>Cédula</th>
+                <th>Nombre completo</th>
+                <th>Sexo</th>
+                <th>Fecha nac.</th>
+                <th>Estado civil</th>
+                <th>Puesto</th>
+                <th>Departamento</th>
+                <th>Contacto</th>
+                <th>Cédula</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="employees-tbody"></tbody>
+          </table>
+          <div id="employees-empty" class="empty-state hidden">
+            <p>No hay registros todavía. Cree el primero cargando una cédula en PDF.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Inactivos -->
+      <section id="view-inactivos" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Empleados inactivos</h2>
+            <p id="inactive-count">0 registro(s)</p>
+          </div>
+          <div class="view-actions">
+            <input id="search-inactive" type="search" placeholder="Buscar en inactivos…" />
+            <button class="btn btn-ghost" id="btn-historial-finiquitos">Historial de finiquitos</button>
+            <button class="btn btn-primary" id="btn-inactivos-excel">Exportar Excel</button>
+          </div>
+        </header>
+        <div class="card table-card">
+          <table class="table" id="inactive-table">
+            <thead>
+              <tr>
+                <th>Cédula</th>
+                <th>Nombre completo</th>
+                <th>Sexo</th>
+                <th>Fecha nac.</th>
+                <th>Estado civil</th>
+                <th>Puesto</th>
+                <th>Departamento</th>
+                <th>Fecha de baja</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="inactive-tbody"></tbody>
+          </table>
+          <div id="inactive-empty" class="empty-state hidden">
+            <p>No hay empleados inactivos. Al dar de baja a un empleado activo aparecerá aquí.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Nómina -->
+      <section id="view-nomina" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Nómina mensual</h2>
+            <p>Retenciones AFP / SFS / ISR (cálculo referencial según tablas vigentes).</p>
+          </div>
+          <div class="view-actions">
+            <input id="nomina-mes" type="number" min="1" max="12" title="Mes" style="width:70px" />
+            <input id="nomina-anio" type="number" min="2000" max="2100" title="Año" style="width:80px" />
+            <select id="nomina-emp" title="Empleado"></select>
+            <select id="nomina-depto" title="Departamento">
+              <option value="">Todos los departamentos</option>
+            </select>
+            <select id="nomina-vista" title="Forma de pago">
+              <option value="mensual">Mensual</option>
+              <option value="quincenal">Quincenal</option>
+              <option value="semanal">Semanal</option>
+              <option value="diario">Diario</option>
+            </select>
+            <button class="btn btn-primary" id="btn-nomina-calcular">Calcular nómina</button>
+            <button class="btn btn-primary" id="btn-nomina-regalia">🎄 Regalía (sueldo 13)</button>
+            <button class="btn btn-ghost" id="btn-nomina-csv">Exportar Excel</button>
+          </div>
+        </header>
+        <div class="card extra-card hidden" id="extra-card">
+          <div class="extra-card-head">
+            <strong>Horas extra, domingos y feriados — <span id="extra-emp-name"></span></strong>
+            <span class="muted">Recargo 100% (2×) la hora y 100% (2×) el día según Código de Trabajo.</span>
+          </div>
+          <div class="vac-form">
+            <label>Horas extra
+              <input id="he-horas" type="number" min="0" step="0.5" value="0" placeholder="0" />
+            </label>
+            <label>Domingos extra
+              <input id="he-domingos" type="number" min="0" step="1" value="0" placeholder="0" />
+            </label>
+            <label>Feriados extra (días)
+              <input id="he-feriados" type="number" min="0" step="1" value="0" placeholder="0" />
+            </label>
+            <label>Otros ingresos (RD$)
+              <input id="he-otros" type="number" min="0" step="0.01" value="0" placeholder="0.00" />
+            </label>
+            <input id="he-nota" type="text" placeholder="Nota (opcional)" style="flex:1;min-width:160px" />
+            <button class="btn btn-primary btn-sm" id="btn-he-save">Guardar y recalcular</button>
+          </div>
+          <div class="incentivos-box">
+            <div class="extra-card-head">
+              <strong>Incentivos por trabajos extra — <span id="inc-total" class="muted">RD$ 0.00</span></strong>
+              <span class="muted">Registre bonos o incentivos con el monto exacto y qué hizo el empleado. Se suman al bruto de la nómina.</span>
+            </div>
+            <div class="vac-form">
+              <label>Monto (RD$)
+                <input id="inc-monto" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <input id="inc-motivo" type="text" placeholder="Qué hizo (ej: instalación de equipos, soporte sábado, proyecto especial…)" style="flex:1;min-width:240px" />
+              <button class="btn btn-primary btn-sm" id="btn-inc-add">+ Agregar incentivo</button>
+            </div>
+            <table class="table">
+              <thead><tr><th class="num">Monto</th><th>Qué hizo</th><th></th></tr></thead>
+              <tbody id="incentivos-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card extra-card hidden" id="vac-pago-card">
+          <div class="extra-card-head">
+            <strong>Pago de vacaciones — <span id="vp-emp-name"></span></strong>
+            <span class="muted">Días × salario diario. Se suma al bruto de la nómina de este período.</span>
+          </div>
+          <div class="vac-form">
+            <label>Modalidad
+              <select id="vp-modalidad">
+                <option value="completo">Completo (días guardados)</option>
+                <option value="personalizada">Personalizada</option>
+              </select>
+            </label>
+            <label>Días guardados disponibles
+              <input id="vp-disponibles" type="number" step="0.5" readonly />
+            </label>
+            <label>Días a pagar
+              <input id="vp-dias" type="number" min="0" step="0.5" value="0" />
+            </label>
+            <label>Salario diario
+              <input id="vp-diario" type="number" readonly />
+            </label>
+            <label>Monto (RD$)
+              <input id="vp-monto" type="number" readonly />
+            </label>
+            <input id="vp-nota" type="text" placeholder="Nota (opcional)" style="flex:1;min-width:160px" />
+            <button class="btn btn-primary btn-sm" id="btn-vp-save">Guardar y recalcular</button>
+            <button class="btn btn-danger btn-sm hidden" id="btn-vp-delete">Eliminar</button>
+          </div>
+          <p class="muted small" id="vp-msg" style="margin:6px 0"></p>
+        </div>
+        <div class="stats-grid" id="nomina-totals"></div>
+        <div class="card table-card" id="nomina-table-card">
+          <table class="table" id="nomina-table">
+            <thead id="nomina-thead"></thead>
+            <tbody id="nomina-tbody"></tbody>
+            <tfoot id="nomina-tfoot"></tfoot>
+          </table>
+          <div id="nomina-empty" class="empty-state hidden">
+            <p>Sin resultados. Verifique que haya empleados activos con salario cargado.</p>
+          </div>
+        </div>
+        <div class="card table-card hidden" id="regalia-card">
+          <div class="report-head">
+            <h3>Regalía pascual (sueldo 13) · <span id="regalia-period"></span></h3>
+            <button class="btn btn-ghost btn-sm" id="btn-regalia-csv">Exportar Excel</button>
+          </div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Empleado</th>
+                <th>Cédula</th>
+                <th>Puesto</th>
+                <th>Departamento</th>
+                <th class="num">Salario</th>
+                <th class="num">Meses en período</th>
+                <th class="num">Regalía</th>
+              </tr>
+            </thead>
+            <tbody id="regalia-tbody"></tbody>
+          </table>
+          <div class="liquidacion-total">
+            <span>Total regalía</span>
+            <b id="regalia-total">RD$ 0.00</b>
+          </div>
+        </div>
+      </section>
+
+      <!-- Reportes -->
+      <section id="view-reportes" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Reportes de planilla</h2>
+            <p>Plantilla, antigüedad, cumpleaños y distribución por departamento.</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="btn-rep-plantilla">Plantilla</button>
+            <button class="btn btn-primary" id="btn-rep-antiguedad">Antigüedad</button>
+            <button class="btn btn-primary" id="btn-rep-cumpleanos">Cumpleaños</button>
+            <select id="rep-mes" title="Mes de cumpleaños"></select>
+            <button class="btn btn-ghost" id="btn-rep-deptos">Departamentos</button>
+            <select id="rep-anio" title="Año para el reporte fiscal 609 (Planilla de pago)"></select>
+            <button class="btn btn-primary" id="btn-rep-609">🧾 Reporte 609</button>
+            <button class="btn btn-ghost" id="btn-rep-csv">Exportar Excel</button>
+          </div>
+        </header>
+        <div class="card table-card" id="report-content">
+          <div class="empty-state">
+            <p>Seleccione un reporte para mostrarlo.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Alertas -->
+      <section id="view-notificaciones" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Alertas y recordatorios</h2>
+            <p>Cumpleaños, fechas de pago, vencimientos de cédula, aniversarios laborales y vacaciones próximas.</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btn-notif-test">Probar notificación</button>
+            <button class="btn btn-primary" id="btn-notif-refresh">↻ Actualizar</button>
+          </div>
+        </header>
+        <div class="stats-grid" id="notif-totals"></div>
+        <div class="grid-2">
+          <div class="card table-card" id="notif-list"></div>
+          <div class="card">
+            <h3>Configuración</h3>
+            <div class="form-stack">
+              <label class="check-line"><input type="checkbox" id="set-notif-activadas" /> Mostrar notificaciones del sistema (toast de Windows)</label>
+              <label>Antelación cumpleaños (días)
+                <input type="number" id="set-dias-cumpleanos" min="0" max="60" />
+              </label>
+              <label>Antelación fechas de pago (días)
+                <input type="number" id="set-dias-pago" min="0" max="15" />
+              </label>
+              <label>Antelación vencimiento de cédula (días)
+                <input type="number" id="set-dias-cedula" min="0" max="180" />
+              </label>
+              <label>Antelación vacaciones (días)
+                <input type="number" id="set-dias-vacaciones" min="0" max="60" />
+              </label>
+              <label>Antelación aniversario laboral (días)
+                <input type="number" id="set-dias-aniversario" min="0" max="60" />
+              </label>
+              <button class="btn btn-primary" id="btn-notif-save">Guardar configuración</button>
+            </div>
+            <p class="muted small" style="margin-top:12px">Las notificaciones de escritorio se envían al iniciar sesión y cada 30 minutos mientras la app esté abierta.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Correos -->
+      <section id="view-correo" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Correos electrónicos</h2>
+            <p>Envíe cédulas, nóminas y recordatorios por correo a los empleados.</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btn-mail-log">📋 Historial</button>
+          </div>
+        </header>
+
+        <details class="card mail-config" id="smtp-config">
+          <summary>⚙️ Configuración SMTP <span class="muted">(solo se configura una vez, queda guardada)</span></summary>
+          <div class="form-grid" style="margin-top:14px">
+            <div class="field"><label for="smtp-host">Servidor SMTP (host)</label><input id="smtp-host" type="text" placeholder="smtp.gmail.com" /></div>
+            <div class="field"><label for="smtp-port">Puerto</label><input id="smtp-port" type="number" min="1" max="65535" placeholder="587" /></div>
+            <div class="field"><label for="smtp-secure">Conexión segura (SSL/TLS)</label>
+              <select id="smtp-secure"><option value="false">No (STARTTLS, puerto 587)</option><option value="true">Sí (SSL, puerto 465)</option></select>
+            </div>
+            <div class="field"><label for="smtp-user">Usuario</label><input id="smtp-user" type="text" placeholder="tu@correo.com" /></div>
+            <div class="field"><label for="smtp-pass">Contraseña / clave de aplicación</label><input id="smtp-pass" type="password" placeholder="••••••••" /></div>
+            <div class="field"><label for="smtp-from-name">Nombre del remitente</label><input id="smtp-from-name" type="text" placeholder="Recursos Humanos" /></div>
+            <div class="field"><label for="smtp-from-email">Correo del remitente</label><input id="smtp-from-email" type="text" placeholder="rrhh@empresa.com" /></div>
+            <div class="field"><label for="smtp-test-to">Enviar prueba a</label><input id="smtp-test-to" type="text" placeholder="tu@correo.com" /></div>
+          </div>
+          <div class="form-row">
+            <button class="btn btn-ghost" id="btn-mail-test">Enviar prueba</button>
+            <button class="btn btn-primary" id="btn-mail-save">Guardar configuración</button>
+          </div>
+        </details>
+
+        <details class="card mail-config" id="ai-config">
+          <summary>🤖 Inteligencia Artificial <span class="muted">(lectura automática de cédulas — las claves quedan guardadas en la base de datos)</span></summary>
+          <div class="form-grid" style="margin-top:14px">
+            <div class="field"><label for="ai-gemini-key">Gemini API Key <span class="muted">(recomendada, gratis)</span></label><input id="ai-gemini-key" type="password" placeholder="AIza..." autocomplete="off" /></div>
+            <div class="field"><label for="ai-openai-key">OpenAI API Key</label><input id="ai-openai-key" type="password" placeholder="sk-..." autocomplete="off" /></div>
+          </div>
+          <div class="form-row">
+            <button class="btn btn-primary" id="btn-ai-save">Guardar claves</button>
+          </div>
+        </details>
+
+        <div class="card">
+          <h3>Envío personalizado</h3>
+          <div class="form-row">
+            <label>Mes
+              <select id="mail-mes"></select>
+            </label>
+            <label>Año
+              <select id="mail-anio"></select>
+            </label>
+            <label>Nómina
+              <select id="mail-nomina-tipo">
+                <option value="mensual">Mensual</option>
+                <option value="quincenal">Quincenal</option>
+                <option value="semanal">Semanal</option>
+                <option value="diario">Diario</option>
+              </select>
+            </label>
+          </div>
+          <div class="check-line"><label class="check-line"><input type="checkbox" id="mail-attach-cedula" checked /> Adjuntar cédula (PDF)</label>
+            <label class="check-line"><input type="checkbox" id="mail-attach-nomina" /> Adjuntar nómina (Excel)</label></div>
+          <p class="muted small">Seleccione los destinatarios (empleados con correo):</p>
+          <div class="form-row">
+            <input id="mail-filter" type="search" placeholder="Filtrar destinatarios…" />
+            <label class="check-line"><input type="checkbox" id="mail-select-all" /> Seleccionar todos</label>
+          </div>
+          <div id="mail-recipients" class="mail-recipients"></div>
+          <div class="form-row">
+            <button class="btn btn-primary" id="btn-mail-send">Enviar seleccionados</button>
+            <span id="mail-recipient-count" class="muted"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Componer correo</h3>
+          <p class="muted small">Envía a todos los destinatarios seleccionados de la lista de arriba (correo masivo). Puede usar plantillas: los marcadores <b>{nombre}</b>, <b>{apellidos}</b>, <b>{puesto}</b> y <b>{departamento}</b> se reemplazan automáticamente con los datos de cada empleado.</p>
+          <div>
+            <p class="muted small" style="margin-bottom:6px">Plantillas rápidas:</p>
+            <div class="form-row">
+              <button class="btn btn-ghost btn-sm" type="button" data-mail-template="cumple">🎂 Cumpleaños</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-mail-template="evento">📅 Invitación a evento</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-mail-template="aviso">📢 Aviso general</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-mail-template="despido">💼 Despido</button>
+            </div>
+          </div>
+          <div class="form-stack">
+            <label>Para (adicional, separados por coma, opcional)
+              <input id="mail-to-extra" type="text" placeholder="otro@correo.com, tercero@correo.com" />
+            </label>
+            <label>Asunto
+              <input id="mail-subject" type="text" placeholder="Asunto del correo" />
+            </label>
+            <label>Mensaje
+              <textarea id="mail-message" rows="6" placeholder="Escriba el mensaje aquí…"></textarea>
+            </label>
+            <div>
+              <button class="btn btn-ghost" id="btn-mail-add-files" type="button">📎 Adjuntar archivos…</button>
+              <input type="file" id="mail-files" multiple hidden />
+              <ul id="mail-files-list" class="mail-files-list"></ul>
+            </div>
+            <div class="form-row">
+              <button class="btn btn-primary" id="btn-mail-send-custom">Enviar correo</button>
+              <span id="mail-custom-count" class="muted"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Contactos externos</h3>
+          <p class="muted small">Agenda guardada para enviar correos a personas o entidades fuera de la empresa (bancos, proveedores, etc.). Marque los que desee incluir en el envío.</p>
+          <div class="form-row">
+            <input id="contacto-nombre" type="text" placeholder="Nombre (ej. Banco Popular)" style="min-width:220px" />
+            <input id="contacto-email" type="text" placeholder="correo@entidad.com" style="min-width:220px" />
+            <button class="btn btn-ghost" id="btn-contacto-add" type="button">+ Agregar contacto</button>
+          </div>
+          <div id="mail-contacts" class="mail-recipients"></div>
+        </div>
+
+        <div class="card">
+          <h3>Recordatorios automáticos</h3>
+          <p class="muted">Envía a cada empleado con correo sus recordatorios pendientes (cumpleaños, vencimiento de cédula, vacaciones próximas y aviso de pago de nómina), según la antelación configurada en Alertas.</p>
+          <button class="btn btn-primary" id="btn-mail-reminders">Enviar recordatorios</button>
+        </div>
+
+        <div class="card hidden" id="mail-log-card">
+          <h3>Historial de envíos</h3>
+          <pre id="mail-log-box" class="mail-log-box"></pre>
+        </div>
+      </section>
+
+      <!-- Usuarios -->
+      <section id="view-usuarios" class="view hidden">
+        <header class="view-header">
+          <div><h2>Gestión de usuarios</h2><p>Administre cuentas y asigne roles.</p></div>
+        </header>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Nuevo usuario</h3>
+            <form id="user-form" class="form-stack">
+              <label>Usuario</label>
+              <input id="user-username" type="text" required />
+              <label>Nombre completo</label>
+              <input id="user-fullname" type="text" />
+              <label>Contraseña</label>
+              <input id="user-password" type="password" required />
+              <label>Rol</label>
+              <select id="user-role-select">
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+                <option value="invitado">Invitado</option>
+              </select>
+              <button type="submit" class="btn btn-primary">Crear usuario</button>
+            </form>
+          </div>
+          <div class="card table-card">
+            <h3>Usuarios registrados</h3>
+            <table class="table">
+              <thead>
+                <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Acciones</th></tr>
+              </thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Audit -->
+      <section id="view-audit" class="view hidden">
+        <header class="view-header">
+          <div><h2>Bitácora</h2><p>Registro de actividades del sistema.</p></div>
+        </header>
+        <div class="card table-card">
+          <table class="table">
+            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sistema -->
+      <section id="view-sistema" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Sistema y respaldos</h2>
+            <p>Respaldo de la base de datos, importación de empleados y documentos internos.</p>
+          </div>
+        </header>
+
+        <div class="card" id="backup-card">
+          <h3>💾 Respaldo de la base de datos</h3>
+          <p class="muted small">Cree copias de seguridad de toda la información (empleados, nómina, correos, configuraciones). Cada respaldo se guarda localmente y, si configura una carpeta adicional, también se copia a la nube o red.</p>
+          <div class="form-row" style="margin-top:10px">
+            <label class="check-line"><input type="checkbox" id="set-backup-auto" /> Respaldo automático diario</label>
+            <label>Conservar <input type="number" id="set-backup-keep" min="1" max="30" style="width:70px" /> respaldos automáticos</label>
+            <button class="btn btn-ghost" id="btn-backup-save-settings">Guardar configuración</button>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <label class="backup-dir-label">Carpeta adicional (OneDrive / Google Drive / red):</label>
+            <input type="text" id="set-backup-dir" placeholder="Ej: C:\Usuarios\SuNombre\OneDrive\KARDEX-Backups" />
+            <button class="btn btn-ghost" id="btn-backup-dir" title="Elegir carpeta">📁 Examinar…</button>
+          </div>
+          <p class="muted small">Apunte a una carpeta sincronizada con la nube (OneDrive, Google Drive) o a una carpeta de red en otra computadora, para que un fallo del disco del servidor no pierda los respaldos. Deje vacío para guardar solo en la carpeta local.</p>
+          <div class="form-row" style="margin-top:12px">
+            <button class="btn btn-primary" id="btn-backup-create">Crear respaldo ahora</button>
+            <button class="btn btn-ghost" id="btn-backup-restore-file">Restaurar desde archivo…</button>
+          </div>
+          <div id="backup-list" class="backup-list" style="margin-top:14px"></div>
+        </div>
+
+        <div class="card">
+          <h3>📥 Importar empleados desde Excel</h3>
+          <p class="muted small">Descargue la plantilla, complétela y súbala. Las columnas que no reconozca se omiten; las cédulas o correos duplicados se reportan sin importarse.</p>
+          <div class="form-row" style="margin-top:10px">
+            <button class="btn btn-ghost" id="btn-import-template">⬇ Descargar plantilla</button>
+            <button class="btn btn-primary" id="btn-import-excel">📤 Importar empleados…</button>
+            <input type="file" id="import-file" accept=".xlsx,.xls,.csv" class="hidden" />
+          </div>
+          <div id="import-preview" class="import-preview" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <h3>📄 Modelos de documentos</h3>
+          <p class="muted small">Las cartas se generan con las plantillas integradas del sistema. Aquí defina la <strong>empresa</strong> (razón social, dirección y contacto), el <strong>destinatario</strong> (banco o persona) y el <strong>firmante</strong> de las cartas. La constancia y la carta de salario comparten el mismo formato; la solicitud de cuenta de nómina usa el modelo del banco.</p>
+
+          <div id="doc-settings" class="form-stack" style="margin-top:12px">
+            <div class="form-row">
+              <label>Razón social
+                <input type="text" id="doc-company-name" maxlength="120" placeholder="KARDEX DIGITAL" />
+              </label>
+              <label>RNC
+                <input type="text" id="doc-company-rnc" maxlength="20" placeholder="1-01-00000-0" />
+              </label>
+              <label>Teléfono
+                <input type="text" id="doc-company-tel" maxlength="30" placeholder="809-000-0000" />
+              </label>
+              <label>Correo
+                <input type="text" id="doc-company-email" maxlength="80" placeholder="contacto@empresa.com" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Dirección de la empresa
+                <input type="text" id="doc-company-address" maxlength="150" placeholder="Calle, esquina, Zona Industrial… (se imprime en las cartas)" />
+              </label>
+              <label>Firmante de las cartas
+                <input type="text" id="doc-firma-nombre" maxlength="80" placeholder="Bolivar Rojas" />
+              </label>
+              <label>Cargo del firmante
+                <input type="text" id="doc-firma-cargo" maxlength="80" placeholder="Enc. Dpto. Contabilidad" />
+              </label>
+              <label>Celular del firmante
+                <input type="text" id="doc-firma-celular" maxlength="30" placeholder="809-000-0000" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Logo
+                <input type="file" id="doc-logo-file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+                <span class="btn btn-ghost" id="btn-doc-logo">🖼 Seleccionar logo</span>
+                <span class="btn btn-ghost btn-danger" id="btn-doc-logo-remove">🗑 Quitar logo</span>
+                <span class="muted small" id="doc-logo-name"></span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Destinatario de las cartas
+                <select id="doc-destinatario-tipo">
+                  <option value="banco">Banco</option>
+                  <option value="particular">Particular (persona)</option>
+                </select>
+                <input type="text" id="doc-destinatario" maxlength="80" list="doc-bancos" placeholder="Banco Popular Dominicano o el nombre que va en la carta" />
+                <datalist id="doc-bancos">
+                  <option value="Banco Popular Dominicano"></option>
+                  <option value="Banco BHD León"></option>
+                  <option value="Banreservas"></option>
+                  <option value="Banco Santa Cruz"></option>
+                  <option value="Banco Caribe"></option>
+                  <option value="Scotiabank"></option>
+                  <option value="Banco Cibao"></option>
+                  <option value="Banco Ademi"></option>
+                  <option value="Banco Vimenca"></option>
+                  <option value="Banesco"></option>
+                  <option value="Banco BDI"></option>
+                  <option value="Banco López de Haro"></option>
+                </datalist>
+              </label>
+            </div>
+
+            <details>
+              <summary class="muted small">Texto de la constancia de trabajo generada (usa marcadores {{…}})</summary>
+              <textarea id="doc-constancia-text" rows="5" placeholder="Hacemos constar que {{nombre_completo}}, portador(a) de la cédula No. {{cedula}}, labora en esta empresa desde el {{fecha_ingreso}} desempeñándose en el puesto de {{puesto}}. Se expide la presente a solicitud de la parte interesada."></textarea>
+            </details>
+            <details>
+              <summary class="muted small">Texto de la carta de salario generada (usa marcadores {{…}})</summary>
+              <textarea id="doc-carta-text" rows="5" placeholder="Hacemos constar que {{nombre_completo}}, portador(a) de la cédula No. {{cedula}}, devenga un salario de {{salario_texto}} en el puesto de {{puesto}}. Se expide la presente a solicitud de la parte interesada."></textarea>
+            </details>
+            <details>
+              <summary class="muted small">Marcadores disponibles (para plantillas Word y textos)</summary>
+              <div id="doc-placeholders" class="placeholder-chips"></div>
+            </details>
+            <div class="form-row">
+              <button class="btn btn-primary" id="btn-doc-save">Guardar modelos</button>
+              <button class="btn btn-ghost btn-danger" id="btn-doc-reset">↺ Restablecer predeterminados</button>
+              <span class="muted small" id="doc-save-msg"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>📄 Documentos internos</h3>
+          <p class="muted small">Constancia de trabajo y carta de salario de cada empleado. También están disponibles desde el expediente del empleado.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== MODAL EMPLEADO ===== -->
+  <div id="employee-modal" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <header class="modal-header">
+        <h3 id="employee-modal-title">Nuevo expediente</h3>
+        <button class="modal-close" id="employee-modal-close">✕</button>
+      </header>
+
+      <div class="cedula-toolbar">
+        <div>
+          <strong>1. Cargue la cédula</strong>
+          <p class="muted">Seleccione el PDF o imagen del frente. Se mostrará una vista previa y se rellenarán los campos automáticamente (OCR + código de barras).</p>
+        </div>
+        <div class="toolbar-buttons">
+          <button class="btn btn-primary" id="btn-load-front">📄 Cargar cédula (PDF / imagen)</button>
+          <button class="btn btn-ghost" id="btn-load-back">Cargar reverso</button>
+          <button class="btn btn-ghost" id="btn-swap-sides" title="Intercambiar las vistas previas de frente y reverso">⟲ Cambiar lado</button>
+          <button class="btn btn-ghost" id="btn-export-cedula-pdf" title="Descargar la cédula en PDF">⬇ PDF cédula</button>
+          <button class="btn btn-ghost hidden" id="btn-export-constancia" title="Descargar constancia de trabajo">📄 Constancia</button>
+          <button class="btn btn-ghost hidden" id="btn-export-carta-salario" title="Descargar carta de salario">💵 Carta salario</button>
+          <button class="btn btn-ghost hidden" id="btn-export-solicitud" title="Descargar solicitud de cuenta de nómina">🏦 Solicitud nómina</button>
+          <select id="sel-export-format" class="hidden" title="Formato de exportación de documentos">
+            <option value="pdf">PDF</option>
+            <option value="docx">Word (.docx)</option>
+          </select>
+          <button class="btn btn-ghost" id="btn-reprocess">↻ Reintentar OCR</button>
+          <select id="ai-provider" class="ai-provider-select hidden" title="Proveedor de IA">
+            <option value="gemini">✨ Gemini (gratis)</option>
+            <option value="openai">✨ OpenAI</option>
+          </select>
+          <button class="btn btn-ai hidden" id="btn-ai-extract">✨ Extraer con IA</button>
+        </div>
+      </div>
+
+      <div id="cedula-loading" class="processing hidden">
+        <div class="spinner"></div>
+        <span id="cedula-loading-text">Procesando…</span>
+      </div>
+
+      <div class="preview-grid">
+        <figure class="preview-card">
+          <figcaption>Frente <span class="preview-dims" id="preview-front-dims"></span></figcaption>
+          <div class="preview-img-wrap" id="preview-front"><div class="preview-placeholder">Sin imagen</div></div>
+        </figure>
+        <figure class="preview-card">
+          <figcaption>Reverso <span class="preview-dims" id="preview-back-dims"></span></figcaption>
+          <div class="preview-img-wrap" id="preview-back"><div class="preview-placeholder">Sin imagen</div></div>
+        </figure>
+      </div>
+
+      <details class="ocr-details">
+        <summary>Texto OCR crudo (para verificar la lectura)</summary>
+        <pre id="ocr-text"></pre>
+      </details>
+
+      <div class="modal-body">
+        <h3 class="section-title">Datos de identificación (frente)</h3>
+        <div class="form-grid" id="front-fields"></div>
+        <h3 class="section-title">Datos del reverso y laborales</h3>
+        <div class="form-grid" id="back-fields"></div>
+        <h3 class="section-title">Datos de nómina</h3>
+        <div class="form-grid" id="labor-fields"></div>
+        <datalist id="ars-list">
+          <option value="Humano"></option>
+          <option value="Universal"></option>
+          <option value="Senasa"></option>
+          <option value="Palic"></option>
+          <option value="Mapfre"></option>
+          <option value="BSS"></option>
+          <option value="La Colonial"></option>
+          <option value="Futuro"></option>
+          <option value="Semma"></option>
+          <option value="Asi"></option>
+          <option value="Siglo"></option>
+          <option value="Monumental"></option>
+          <option value="Vida"></option>
+        </datalist>
+        <datalist id="afp-list">
+          <option value="Crecer"></option>
+          <option value="Popular"></option>
+          <option value="Siembra"></option>
+          <option value="Reservas"></option>
+          <option value="Romana"></option>
+        </datalist>
+        <h3 class="section-title">Permisos y vacaciones</h3>
+        <div id="vacaciones-section">
+          <p class="muted">Guarde primero el expediente para gestionar permisos y vacaciones.</p>
+        </div>
+        <h3 class="section-title">Observaciones</h3>
+        <textarea id="f-nota" rows="2" placeholder="Notas internas del expediente…"></textarea>
+        <h3 class="section-title">Hoja de vida interna</h3>
+        <div id="hoja-vida-section">
+          <p class="muted">Guarde primero el expediente para ver el historial de cambios.</p>
+        </div>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="btn btn-danger hidden" id="btn-delete-employee">Eliminar</button>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" id="btn-cancel-employee">Cancelar</button>
+        <button class="btn btn-primary" id="btn-save-employee">Guardar expediente</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL LIQUIDACIÓN ===== -->
+  <div id="liquidacion-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>Liquidación / finiquito</h3>
+        <button class="modal-close" id="liquidacion-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="liquidacion-subject"></p>
+        <div class="form-row" style="margin-top:10px">
+          <label>Fecha de baja <input type="date" id="liq-fecha-baja" /></label>
+        </div>
+        <div class="liq-opts">
+          <label class="check-line"><input type="checkbox" id="liq-preaviso" /> ¿Ha sido preavisado? (Art. 76 — no pagaría preaviso)</label>
+          <label class="check-line"><input type="checkbox" id="liq-cesantia" checked /> Incluir cesantía (Art. 80)</label>
+          <label class="check-line"><input type="checkbox" id="liq-vacaciones" checked /> Ha tomado las vacaciones del último año (Art. 177-180)</label>
+          <label class="check-line"><input type="checkbox" id="liq-navidad" checked /> Incluir salario de navidad (Art. 219)</label>
+        </div>
+        <div class="liquidacion-grid" id="liquidacion-detail"></div>
+        <div class="liquidacion-total">
+          <span>Total a pagar</span>
+          <b id="liquidacion-total">RD$ 0.00</b>
+        </div>
+        <p class="muted small">Cálculo referencial según Código de Trabajo (Ley 16-92). Verifique con un profesional de RRHH.</p>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-liquidacion-cancel">Cancelar</button>
+        <button class="btn btn-danger" id="btn-liquidacion-confirm">Confirmar baja y liquidar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL FINIQUITO (historial) ===== -->
+  <div id="finiquito-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>Finiquito / liquidación guardada</h3>
+        <button class="modal-close" id="finiquito-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="finiquito-subject"></p>
+        <div id="finiquito-list"></div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-finiquito-close">Cerrar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL HISTORIAL DE FINIQUITOS ===== -->
+  <div id="historial-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <header class="modal-header">
+        <h3>Historial de finiquitos</h3>
+        <button class="modal-close" id="historial-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="historial-subject">Todos los finiquitos guardados, incluso de empleados reintegrados.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Empleado</th>
+                <th>Cédula</th>
+                <th>Estado</th>
+                <th>Fecha de baja</th>
+                <th>Total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="historial-tbody"></tbody>
+          </table>
+        </div>
+        <div id="historial-empty" class="empty-state hidden">
+          <p>No hay finiquitos guardados todavía.</p>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-historial-close">Cerrar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL REINTEGRACIÓN ===== -->
+  <div id="reintegrar-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>Reintegrar empleado</h3>
+        <button class="modal-close" id="reintegrar-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">Al reintegrar, la fecha de ingreso se actualizará al día del reintegro (la antigüedad anterior queda en el historial).</p>
+        <div class="form-row" style="margin-top:10px">
+          <label>Fecha de reintegro <input type="date" id="reintegrar-fecha" /></label>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-reintegrar-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-reintegrar-confirm">Reintegrar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL CONEXIÓN / SERVIDOR ===== -->
+  <div id="server-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>Conexión y servidor</h3>
+        <button class="modal-close" id="server-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">Elige cómo se usarán los datos de KARDEX en esta PC.</p>
+        <div class="mode-cards" id="conn-mode-cards">
+          <label class="mode-card" data-mode="local">
+            <input type="radio" name="conn-mode" value="local" />
+            <div>
+              <strong>💻 Base de datos local</strong>
+              <small>Usar únicamente los datos guardados en esta PC.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="client">
+            <input type="radio" name="conn-mode" value="client" />
+            <div>
+              <strong>🌐 Conectar al servidor</strong>
+              <small>Usar la base central de la empresa por la red.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="server">
+            <input type="radio" name="conn-mode" value="server" />
+            <div>
+              <strong>🖥️ Este equipo es el servidor</strong>
+              <small>Compartir la base central con los demás por la red.</small>
+            </div>
+          </label>
+        </div>
+
+        <div id="conn-client" class="form-stack hidden">
+          <label for="server-name">Nombre del servidor</label>
+          <div class="row">
+            <input id="server-name" type="text" placeholder="kardex" spellcheck="false" />
+            <button type="button" class="btn btn-ghost" id="btn-connect-name">🔎 Buscar por nombre</button>
+          </div>
+          <p class="muted" style="margin:-6px 0 10px">Escribe el nombre que muestra el panel del servidor (ej. <b>kardex</b>). La dirección se rellena sola.</p>
+          <label for="server-url">Dirección del servidor (o búscala aquí abajo)</label>
+          <input id="server-url" type="text" placeholder="http://192.168.1.50:18006" spellcheck="false" />
+          <button type="button" class="btn btn-ghost" id="btn-discover">🔍 Buscar servidores en la red</button>
+          <div id="discover-results" class="discover-results"></div>
+          <label for="server-token">Token (si el servidor lo requiere)</label>
+          <input id="server-token" type="text" placeholder="Pégalo desde el panel del servidor" spellcheck="false" />
+          <div id="server-test-result" class="error-box hidden"></div>
+        </div>
+
+        <div id="conn-server" class="form-stack hidden">
+          <p class="muted" style="margin:2px 0 6px">Este equipo será el <b>servidor central</b>. Las demás PCs se conectarán escribiendo su nombre.</p>
+          <label for="server-name-gen">Nombre del servidor</label>
+          <input id="server-name-gen" type="text" placeholder="kardex" spellcheck="false" />
+          <p class="muted" style="margin:-6px 0 6px">Ej.: <b>kardex</b> · los clientes lo escriben en "Conectar al servidor".</p>
+
+          <button type="button" class="btn btn-ghost btn-toggle" id="server-advanced-toggle">⚙️ Opciones avanzadas (puerto, token)<span id="server-advanced-caret">▾</span></button>
+          <div id="server-advanced" class="form-stack hidden">
+            <label for="server-port">Puerto</label>
+            <input id="server-port" type="number" min="1" max="65535" placeholder="18006" />
+            <label for="server-token-gen">Token de acceso</label>
+            <div class="row">
+              <input id="server-token-gen" type="text" placeholder="Genera un token para proteger la base" spellcheck="false" />
+              <button type="button" class="btn btn-ghost" id="btn-gen-token" title="Generar token automáticamente">🔄 Generar</button>
+            </div>
+          </div>
+
+          <p class="muted" style="margin:12px 0 2px">Este equipo será visible en la red como:</p>
+          <div id="server-lan-ips" class="lan-ips"></div>
+
+          <button type="button" class="btn btn-ghost" id="btn-firewall-fix">🛡️ Permitir en el Firewall automáticamente</button>
+          <div id="firewall-fix-result" class="error-box hidden"></div>
+          <p class="muted warn">⚠️ Si esta PC usa un antivirus externo (Norton, Avast, McAfee…), también debe permitir KARDEX Digital en su firewall.</p>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost hidden" id="btn-server-test">Probar conexión</button>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" id="btn-server-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-server-save">Aplicar y reiniciar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== WIZARD PRIMER ARRANQUE ===== -->
+  <div id="wizard-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>👋 Bienvenido a KARDEX Digital</h3>
+      </header>
+      <div class="modal-body">
+        <p class="muted">¿Qué es esta PC? Elige cómo se usarán los datos y KARDEX se configurará solo.</p>
+        <div class="mode-cards" id="wizard-mode-cards">
+          <label class="mode-card" data-mode="server">
+            <input type="radio" name="wizard-mode" value="server" />
+            <div>
+              <strong>🖥️ Es el servidor</strong>
+              <small>La base central de la empresa está aquí y la comparto con las demás PCs.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="client">
+            <input type="radio" name="wizard-mode" value="client" />
+            <div>
+              <strong>🌐 Es un cliente</strong>
+              <small>Conectarme a la base central de la empresa por la red.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="local">
+            <input type="radio" name="wizard-mode" value="local" />
+            <div>
+              <strong>💻 Solo uso esta PC</strong>
+              <small>Usar los datos guardados localmente, sin red.</small>
+            </div>
+          </label>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-wizard-cancel">No configurar ahora</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary hidden" id="btn-wizard-next">Continuar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== MODAL LICENCIA ===== -->
+  <div id="license-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <header class="modal-header">
+        <h3>Licencia de KARDEX Digital</h3>
+        <button class="modal-close" id="license-modal-close">✕</button>
+      </header>
+      <div class="modal-body">
+        <div id="license-current" class="license-current"></div>
+        <label for="license-key" style="display:block;font-size:13px;font-weight:600;margin-top:12px">Clave de licencia</label>
+        <textarea id="license-key" rows="4" spellcheck="false" placeholder="Pega aquí la clave de licencia que recibiste, o carga un archivo .lic…"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn btn-ghost" id="btn-license-file">📄 Cargar archivo .lic</button>
+          <input type="file" id="license-file" accept=".lic,.txt" class="hidden" />
+        </div>
+        <p class="muted" style="margin-top:8px" id="license-machine-hint"></p>
+        <div id="license-result" class="error-box hidden"></div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="btn-license-cancel">Cerrar</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="btn-license-activate">Activar licencia</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
