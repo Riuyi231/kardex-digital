@@ -38,6 +38,7 @@
     "appId": "com.kardex.digital",
     "productName": "KARDEX Digital",
     "asar": false,
+    "npmRebuild": false,
     "publish": {
       "provider": "github",
       "owner": "Riuyi231",
