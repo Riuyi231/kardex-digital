@@ -1525,7 +1525,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.12';
+  const CURRENT_APP_VERSION = '1.5.13';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1534,9 +1534,18 @@
         toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
         if (NATIVO && latest.downloadUrl) {
           setTimeout(() => {
-            if (confirm('NexAlert v' + latest.version + ' disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\n\nDescargar e instalar actualizacion?')) {
-              toast('Abriendo descarga...', 'ok');
-              window.open(latest.downloadUrl, '_system');
+            if (confirm('NexAlert v' + latest.version + ' disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\n\nInstalar actualizacion?')) {
+              const AI = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ApkInstaller;
+              if (AI) {
+                toast('Descargando e instalando...', 'ok');
+                AI.downloadAndInstall({ url: latest.downloadUrl }).then(() => {
+                  toast('Actualizacion instalada', 'ok');
+                }).catch((e) => {
+                  toast('Error: ' + (e.message || e), 'err');
+                });
+              } else {
+                window.open(latest.downloadUrl, '_system');
+              }
             }
           }, 2000);
         }
@@ -1922,6 +1931,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
