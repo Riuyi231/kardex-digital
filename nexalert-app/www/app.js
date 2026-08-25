@@ -1525,7 +1525,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.10';
+  const CURRENT_APP_VERSION = '1.5.11';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1533,24 +1533,12 @@
       if (latest && latest.version && latest.version !== CURRENT_APP_VERSION) {
         toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
         if (NATIVO && latest.downloadUrl) {
-          const CU = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
-          if (CU) {
-            setTimeout(async () => {
-              try {
-                toast('Descargando actualizacion...', 'ok');
-                const bundle = await CU.download({ url: latest.downloadUrl, version: latest.version });
-                await CU.set(bundle);
-              } catch (e) {
-                toast('Error al actualizar: ' + (e.message || e), 'err');
-              }
-            }, 2500);
-          } else {
-            setTimeout(() => {
-              if (confirm('NexAlert v' + latest.version + ' disponible.\n\nDescargar e instalar?')) {
-                window.location.href = latest.downloadUrl;
-              }
-            }, 2000);
-          }
+          setTimeout(() => {
+            if (confirm('NexAlert v' + latest.version + ' disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\n\nDescargar e instalar actualizacion?')) {
+              toast('Abriendo descarga...', 'ok');
+              window.open(latest.downloadUrl, '_system');
+            }
+          }, 2000);
         }
       }
     } catch (e) { /* noop */ }
@@ -1934,6 +1922,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
