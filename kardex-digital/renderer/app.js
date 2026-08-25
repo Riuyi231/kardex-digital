@@ -2780,6 +2780,9 @@
         if (!res.ok) throw new Error(res.error);
         currentUser = res.data;
         showApp();
+        if (res.data.licenseWarning) {
+          toast('Advertencia: ' + res.data.licenseWarning + '. Contacte al administrador.', 'warning', 6000);
+        }
       } catch (e) {
         const box = $('login-error');
         box.textContent = e.message;

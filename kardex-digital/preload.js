@@ -123,5 +123,7 @@ contextBridge.exposeInMainWorld('api', {
   serverStop: () => ipcRenderer.invoke('server:stop'),
 
   licenseStatus: () => ipcRenderer.invoke('license:status'),
-  licenseActivate: (key) => ipcRenderer.invoke('license:activate', { key })
+  licenseActivate: (key) => ipcRenderer.invoke('license:activate', { key }),
+
+  diagStatus: () => ipcRenderer.invoke('diag:status')
 });

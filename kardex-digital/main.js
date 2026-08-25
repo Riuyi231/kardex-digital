@@ -484,15 +484,15 @@ function registerIpc() {
 
   ipcMain.handle('auth:login', wrap((e, { username, password }) => {
     const lic = license.canUse();
-    if (!lic.ok) {
-      throw new Error('Licencia de KARDEX no disponible: ' + lic.reason + '. Activa tu licencia en la pantalla de inicio.');
-    }
     const user = db.auth.login(username, password);
     if (!user) throw new Error('Usuario o contraseña incorrectos');
+    if (!lic.ok && user.role !== 'admin') {
+      throw new Error('Licencia de KARDEX no disponible: ' + lic.reason + '. Contacte al administrador.');
+    }
     currentUser = user;
     db.audit.add(user, 'login', 'Inicio de sesión');
     checkAndNotify();
-    return user;
+    return { ...user, licenseWarning: !lic.ok ? lic.reason : null };
   }));
 
   ipcMain.handle('auth:logout', wrap(() => {
@@ -612,6 +612,24 @@ function registerIpc() {
     if (gemini.isConfigured()) providers.push('gemini');
     console.log('[KARDEX] ai:status -> proveedores:', JSON.stringify(providers));
     return { configured: providers.length > 0, providers };
+  }));
+
+  ipcMain.handle('diag:status', wrap(() => {
+    const ocr = require('./services/ocr');
+    const { isNative, implementation } = require('./services/canvas');
+    const fs2 = require('fs');
+    const path2 = require('path');
+    const tessPath = path2.join(__dirname, 'resources', 'tessdata', 'spa.traineddata.gz');
+    const tessUnzipped = path2.join(__dirname, 'resources', 'tessdata', 'spa.traineddata');
+    return {
+      canvas: { native: isNative, implementation },
+      tessdata: fs2.existsSync(tessPath) || fs2.existsSync(tessUnzipped),
+      tessdataPath: tessPath,
+      ocrReady: ocr.tessdataReady(),
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch
+    };
   }));
 
   ipcMain.handle('ai:settings', wrap(() => {

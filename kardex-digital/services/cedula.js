@@ -118,7 +118,12 @@ async function processFile(filePath) {
 
   let pages = [];
   if (isPdf(filePath)) {
-    pages = await pdfToImages(buf);
+    try {
+      pages = await pdfToImages(buf);
+    } catch (e) {
+      console.error('[KARDEX] Error renderizando PDF:', e.message);
+      throw new Error('No se pudo renderizar el PDF. Verifique que el archivo no este corrupto.');
+    }
     if (pages.length === 0) throw new Error('No se pudo leer ninguna página del PDF');
   } else {
     const ext = path.extname(filePath).toLowerCase();
@@ -129,8 +134,15 @@ async function processFile(filePath) {
 
   pages.forEach((p, i) => console.log(`[KARDEX] Página ${i + 1} después del recorte: ${p.width}x${p.height}`));
 
-  const ocrResults = [];
-  for (const page of pages) ocrResults.push(await recognizeDetailed(page.buffer));
+  let ocrResults = [];
+  let ocrFailed = false;
+  try {
+    for (const page of pages) ocrResults.push(await recognizeDetailed(page.buffer));
+  } catch (e) {
+    console.error('[KARDEX] Error en OCR:', e.message);
+    ocrFailed = true;
+    ocrResults = pages.map(() => ({ text: '', words: [] }));
+  }
 
   const frontIdx = detectFrontIndex(ocrResults);
   const front = pages[frontIdx];
@@ -143,19 +155,27 @@ async function processFile(filePath) {
     ocrBack = ocrResults[backIdx] || { text: '', words: [] };
   }
 
-  const fields = parseCedula(ocrFront, ocrBack);
-
-  const missing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
-  if (missing.length && front) {
-    const f2 = await recognizeDetailed(await upscale(front.buffer, 2));
-    const b2 = back ? await recognizeDetailed(await upscale(back.buffer, 2)) : { text: '', words: [] };
-    const fields2 = parseCedula(f2, b2);
-    for (const k of missing) {
-      if (fields2[k] && !fields[k]) fields[k] = fields2[k];
-    }
+  let fields = {};
+  try {
+    fields = parseCedula(ocrFront, ocrBack);
+  } catch (e) {
+    console.error('[KARDEX] Error parseando cédula:', e.message);
+    fields = emptyFields();
   }
 
-  if (!fields.estado_civil && front) {
+  const missing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
+  if (missing.length && front && !ocrFailed) {
+    try {
+      const f2 = await recognizeDetailed(await upscale(front.buffer, 2));
+      const b2 = back ? await recognizeDetailed(await upscale(back.buffer, 2)) : { text: '', words: [] };
+      const fields2 = parseCedula(f2, b2);
+      for (const k of missing) {
+        if (fields2[k] && !fields[k]) fields[k] = fields2[k];
+      }
+    } catch (e) { /* noop */ }
+  }
+
+  if (!fields.estado_civil && front && !ocrFailed) {
     try {
       const right = await ocrRightColumn(front.buffer, 1400);
       const val = extractEstadoCivil(right.text);
@@ -163,7 +183,12 @@ async function processFile(filePath) {
     } catch (e) { /* noop */ }
   }
 
-  const barcode = await decodeFirstBarcode(pages);
+  let barcode = null;
+  try {
+    barcode = await decodeFirstBarcode(pages);
+  } catch (e) {
+    console.error('[KARDEX] Error decodificando barcode:', e.message);
+  }
 
   if (barcode && /^\d{11}$/.test(barcode.replace(/\D/g, ''))) {
     fields.cedula = normalizeCedulaNumber(barcode);
@@ -175,7 +200,9 @@ async function processFile(filePath) {
     back: back ? back.dataUrl : null,
     barcode,
     fields,
-    ocrText: `${ocrFront.text || '(sin texto reconocido en el frente)'}${ocrBack.text ? `\n---REVERSO---\n${ocrBack.text}` : ''}`
+    ocrText: ocrFailed
+      ? '(OCR no disponible — verifique tessdata o reinicie la app)'
+      : `${ocrFront.text || '(sin texto reconocido en el frente)'}${ocrBack.text ? `\n---REVERSO---\n${ocrBack.text}` : ''}`
   };
 }
 
