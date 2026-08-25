@@ -269,6 +269,11 @@ body.light .filtro-fechas input::-webkit-calendar-picker-indicator { filter: non
 }
 
 .estado-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.estado-bloqueado {
+  width: 100%; padding: 12px 16px; border-radius: var(--radius-sm);
+  background: rgba(0,200,120,0.12); color: #2dd4a0; font-size: 13px; font-weight: 700;
+  text-align: center; border: 1px solid rgba(0,200,120,0.25);
+}
 .estado-btn {
   flex: 1 1 calc(33% - 8px); min-width: 0;
   padding: 11px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border);

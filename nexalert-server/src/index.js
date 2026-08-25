@@ -196,6 +196,8 @@ app.post('/api/reportes/:id/estado', a.requireAuth('tecnico'), (req, res) => {
   if (!ESTADOS_VALIDOS.includes(estado)) return res.status(400).json({ ok: false, error: 'Estado no válido' });
   const rp = findReportForUserNoArch(Number(req.params.id), req.user);
   if (!rp) return res.status(404).json({ ok: false, error: 'Reporte encontrado o no asignado' });
+  const isGerente = (req.user.rol || 'tecnico') === 'gerente';
+  if (rp.estado === 'resuelto' && !isGerente) return res.status(403).json({ ok: false, error: 'Reporte resuelto. Solo el gerente puede cambiar el estado.' });
   try {
     const out = d.setEstado(rp.id, estado, req.user.nombre);
     const nota = String(req.body.nota || '').trim();
@@ -529,7 +531,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.14';
+const APP_VERSION = '1.5.15';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -551,6 +553,7 @@ app.listen(PORT, '0.0.0.0', () => {
     try { d.autoArchiveResolved(); } catch (e) { /* noop */ }
   }, 30 * 1000);
 });
+
 
 
 

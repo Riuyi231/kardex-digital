@@ -171,7 +171,7 @@
 </div>
 
 <input type="file" id="in-foto-cam" accept="image/*" capture="environment" hidden>
-<input type="file" id="in-foto-gal" accept="image/*" hidden>
+<input type="file" id="in-foto-gal" accept="image/*" multiple hidden>
 
 <div id="foto-overlay" class="hidden">
   <img id="foto-overlay-img" alt="Foto">
@@ -212,11 +212,24 @@
   </div>
 </div>
 
+<div id="resolver-modal" class="hidden">
+  <div class="modal-card espera-card">
+    <h2 id="resolver-titulo">Resuelto</h2>
+    <div class="espera-hint">Describe la solucion aplicada o lo que hiciste para resolver el problema.</div>
+    <textarea id="resolver-nota" rows="3" placeholder="Ej: Se reemplazo el bombillo LED 15W..."></textarea>
+    <div class="modal-actions">
+      <button id="resolver-cancel" class="btn-ghost">Cancelar</button>
+      <button id="resolver-submit" class="btn-primary">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="hidden"></div>
 
-<script src="app.js?v=1.5.14"></script>
+<script src="app.js?v=1.5.15"></script>
 </body>
 </html>
+
 
 
 
