@@ -106,7 +106,15 @@ body {
 .sidebar {
   width: 230px; background: var(--sidebar); color: #cbd5e1;
   display: flex; flex-direction: column; flex-shrink: 0;
+  transition: width 0.2s ease;
 }
+.sidebar.collapsed { width: 56px; }
+.sidebar.collapsed .sidebar-brand span,
+.sidebar.collapsed .user-chip strong,
+.sidebar.collapsed .role-badge { display: none; }
+.sidebar.collapsed .nav-item { overflow: hidden; white-space: nowrap; text-overflow: clip; width: 36px; padding: 11px 0; text-align: center; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 18px 8px; }
+.sidebar.collapsed .sidebar-footer { align-items: center; }
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
   padding: 18px 16px; font-weight: 700; font-size: 15px; color: #fff;

@@ -56,6 +56,7 @@
         <button class="nav-item hidden" data-view="sistema" id="nav-sistema">⚙️ Sistema</button>
       </nav>
       <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-block" id="sidebar-toggle">◀ Colapsar</button>
         <div class="user-chip">
           <strong id="user-name">—</strong>
           <span id="user-role-badge" class="role-badge">—</span>
@@ -214,6 +215,30 @@
             <table class="table">
               <thead><tr><th class="num">Monto</th><th>Qué hizo</th><th></th></tr></thead>
               <tbody id="incentivos-tbody"></tbody>
+            </table>
+          </div>
+          <div class="incentivos-box">
+            <div class="extra-card-head">
+              <strong>Deducciones manuales — <span id="ded-total" class="muted">RD$ 0.00</span></strong>
+              <span class="muted">Préstamos, adelantos u otros descuentos. Se restan del neto en nómina quincenal.</span>
+            </div>
+            <div class="vac-form">
+              <label>Quincena
+                <select id="ded-quincena">
+                  <option value="0">Todas</option>
+                  <option value="1">Primera</option>
+                  <option value="2">Segunda</option>
+                </select>
+              </label>
+              <label>Monto (RD$)
+                <input id="ded-monto" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <input id="ded-motivo" type="text" placeholder="Motivo (ej: préstamo, adelanto, descuento…) " style="flex:1;min-width:200px" />
+              <button class="btn btn-primary btn-sm" id="btn-ded-add">+ Agregar deducción</button>
+            </div>
+            <table class="table">
+              <thead><tr><th class="num">Monto</th><th>Quincena</th><th>Motivo</th><th></th></tr></thead>
+              <tbody id="deducciones-tbody"></tbody>
             </table>
           </div>
         </div>

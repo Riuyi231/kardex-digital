@@ -721,7 +721,12 @@ function registerIpc() {
     }
     const pagosVacaciones = {};
     for (const pv of db.pagoVacaciones.listForPeriod(m, y)) pagosVacaciones[pv.employee_id] = pv;
-    return { m, y, empList, extras, incentivos, pagosVacaciones };
+    const deduccionesManuales = {};
+    for (const d of db.deduccionesManuales.listForPeriod(m, y)) {
+      if (!deduccionesManuales[d.employee_id]) deduccionesManuales[d.employee_id] = [];
+      deduccionesManuales[d.employee_id].push(d);
+    }
+    return { m, y, empList, extras, incentivos, pagosVacaciones, deduccionesManuales };
   }
 
   ipcMain.handle('nomina:calcular', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
@@ -732,8 +737,8 @@ function registerIpc() {
 
   ipcMain.handle('nomina:quincenal', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
     requireRole(['admin', 'editor']);
-    const { m, y, empList, extras, incentivos, pagosVacaciones } = nominaInputs(mes, anio, employee_id, departamento);
-    return nomina.calcNominaQuincenal(empList, m, y, extras, incentivos, pagosVacaciones);
+    const { m, y, empList, extras, incentivos, pagosVacaciones, deduccionesManuales } = nominaInputs(mes, anio, employee_id, departamento);
+    return nomina.calcNominaQuincenal(empList, m, y, extras, incentivos, pagosVacaciones, deduccionesManuales);
   }));
 
   ipcMain.handle('nomina:semanal', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
@@ -833,6 +838,33 @@ function registerIpc() {
     return true;
   }));
 
+  ipcMain.handle('deducciones:list', wrap((e, { employee_id, mes, anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    if (employee_id) return db.deduccionesManuales.listForEmployee(employee_id, mes, anio);
+    return db.deduccionesManuales.listForPeriod(mes, anio);
+  }));
+
+  ipcMain.handle('deducciones:create', wrap((e, { data } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const created = db.deduccionesManuales.create(data, user.id);
+    db.audit.add(user, 'deducciones:create', `#${created.employee_id} ${created.mes}/${created.anio} Q${created.quincena} RD$ ${created.monto}`);
+    return created;
+  }));
+
+  ipcMain.handle('deducciones:update', wrap((e, { id, data } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const updated = db.deduccionesManuales.update(id, data);
+    db.audit.add(user, 'deducciones:update', `Deducción #${id}`);
+    return updated;
+  }));
+
+  ipcMain.handle('deducciones:delete', wrap((e, { id }) => {
+    const user = requireRole(['admin', 'editor']);
+    db.deduccionesManuales.delete(id);
+    db.audit.add(user, 'deducciones:delete', `Deducción #${id}`);
+    return true;
+  }));
+
   ipcMain.handle('nomina:liquidacion', wrap((e, { id, fecha_baja, opciones } = {}) => {
     requireRole(['admin', 'editor']);
     const rec = db.employees.get(id);
@@ -880,7 +912,7 @@ function registerIpc() {
   ipcMain.handle('nomina:regalia', wrap((e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
     const actives = db.employees.list('', 'activo');
-    return nomina.calcRegalia(actives, anio);
+    return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio);
   }));
 
   ipcMain.handle('export:excel', wrap(async (e, { filename, sheets } = {}) => {

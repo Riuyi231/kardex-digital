@@ -188,17 +188,22 @@ function calcNomina(employees, mes, anio, extras = {}, incentivos = {}, pagosVac
 
 // Nómina en dos quincenas: mitad del sueldo en cada una; las retenciones
 // (AFP, SFS/ARS e ISR) y los extras/incentivos/pago de vacaciones se aplican en la segunda quincena.
-function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {}, pagosVacaciones = {}) {
+// `deduccionesManuales` es un mapa { employee_id: [{ monto, quincena }] } donde quincena: 0=todas, 1=primera, 2=segunda.
+function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {}, pagosVacaciones = {}, deduccionesManuales = {}) {
   const rows = [];
-  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, quincena2_neto: 0, neto: 0 };
+  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, deducciones_manuales: 0, quincena2_neto: 0, neto: 0 };
   for (const emp of employees || []) {
     const m = calcEmpleadoMes(emp, extras, incentivos, pagosVacaciones);
     if (!m) continue;
     const mitad = round2(m.salario / 2);
-    const q1 = mitad; // 1ra quincena: sin retenciones
-    const q2Bruto = round2(mitad + m.extra + m.otrosIngresos + m.incentivo + m.vacacionPago); // extras, otros, incentivos y vacaciones en la 2da
+    const dm = deduccionesManuales[emp.id] || [];
+    const dmQ1 = round2(dm.filter((d) => d.quincena === 1 || d.quincena === 0).reduce((s, d) => s + (Number(d.monto) || 0), 0));
+    const dmQ2 = round2(dm.filter((d) => d.quincena === 2 || d.quincena === 0).reduce((s, d) => s + (Number(d.monto) || 0), 0));
+    const totalDm = round2(dmQ1 + dmQ2);
+    const q1 = round2(mitad - dmQ1);
+    const q2Bruto = round2(mitad + m.extra + m.otrosIngresos + m.incentivo + m.vacacionPago);
     const ret = m.retenciones;
-    const q2Neto = round2(q2Bruto - ret);
+    const q2Neto = round2(q2Bruto - ret - dmQ2);
     const totalNeto = round2(q1 + q2Neto);
     rows.push({
       id: emp.id,
@@ -223,6 +228,7 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
       sfs: m.sfs,
       isr: m.isr,
       retenciones: ret,
+      deducciones_manuales: totalDm,
       quincena1: q1,
       quincena2_bruto: q2Bruto,
       quincena2_neto: q2Neto,
@@ -240,6 +246,7 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
     totales.sfs += m.sfs;
     totales.isr += m.isr;
     totales.retenciones += ret;
+    totales.deducciones_manuales += totalDm;
     totales.quincena2_neto += q2Neto;
     totales.neto += totalNeto;
   }
@@ -458,7 +465,8 @@ function regaliaPascual(salarioMensualVal, fechaIngreso, fechaSalida) {
 
 // Regalía pascual ("sueldo 13") de toda la plantilla para un año.
 // Período: 1 dic del año anterior al 30 nov del año indicado (Art. 219).
-function calcRegalia(employees, anio) {
+// Si el salario cambió durante el año, usa el salario promedio ponderado por meses.
+function calcRegalia(employees, anio, salarioHistorialFn) {
   const y = Number(anio) || new Date().getFullYear();
   const inicioPeriodo = new Date(y - 1, 11, 1);
   const finPeriodo = new Date(y, 10, 30);
@@ -467,8 +475,12 @@ function calcRegalia(employees, anio) {
   const rows = [];
   let total = 0;
   for (const emp of employees || []) {
-    const sm = round2(salarioMensual(emp.salario, emp.tipo_salario));
+    let sm = round2(salarioMensual(emp.salario, emp.tipo_salario));
     if (sm <= 0) continue;
+    if (salarioHistorialFn) {
+      const promedio = salarioHistorialFn(emp.id, y);
+      if (promedio && promedio > 0) sm = round2(promedio);
+    }
     const ing = parseDate(emp.fecha_ingreso);
     const ini = ing && ing > inicioPeriodo ? ing : inicioPeriodo;
     const meses = Math.max(0, monthsBetween(ini, fin));

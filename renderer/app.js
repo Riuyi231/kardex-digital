@@ -1043,6 +1043,7 @@
         }
       } catch (e) { /* sin extras guardadas */ }
       await renderIncentivos(empId, mes, anio);
+      await renderDeducciones(empId, mes, anio);
       await renderPagoVacaciones(empId, mes, anio);
     }
     await renderNominaVista($('nomina-vista').value, mes, anio, empId, depto);
@@ -1100,11 +1101,12 @@
     quincenal: {
       label: 'Quincenal',
       fetch: (mes, anio, empId, depto) => window.api.calcularNominaQuincenal(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', '1ra quincena', '2da quincena (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones RD$', '1ra quincena', '2da quincena (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
         C('money', r.salario), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
         C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
+        C('money', r.deducciones_manuales),
         C('money', r.quincena1), C('money', r.quincena2_bruto),
         C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
         C('money', r.quincena2_neto), C('money', r.total_neto, true)
@@ -1113,6 +1115,7 @@
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
         C('money', t.salario), C('texto', ''), C('texto', ''), C('texto', ''),
         C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
+        C('money', t.deducciones_manuales),
         C('money', t.quincena1), C('money', t.quincena2_bruto),
         C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
         C('money', t.quincena2_neto), C('money', t.neto, true)
@@ -1124,6 +1127,7 @@
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
+        ['Deducciones manuales', fmtRD(t.deducciones_manuales), ''],
         ['1ra quincena', fmtRD(t.quincena1), ''],
         ['2da quincena (bruto)', fmtRD(t.quincena2_bruto), ''],
         ['Total retenciones', fmtRD(t.retenciones), ''],
@@ -1301,6 +1305,61 @@
       $('inc-monto').value = '';
       $('inc-motivo').value = '';
       renderIncentivos(empId, mes, anio);
+      loadNomina();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function renderDeducciones(empId, mes, anio) {
+    const tb = $('deducciones-tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    $('ded-total').textContent = 'RD$ 0.00';
+    if (!empId) return;
+    try {
+      const res = await window.api.listDeducciones(empId, mes, anio);
+      if (!res.ok) throw new Error(res.error);
+      const list = res.data || [];
+      let total = 0;
+      tb.innerHTML = list.length ? list.map(d => {
+        total += Number(d.monto) || 0;
+        const qLabel = d.quincena === 1 ? '1ra' : d.quincena === 2 ? '2da' : 'Todas';
+        return `<tr>
+          <td class="num">${fmtRD(d.monto)}</td>
+          <td>${qLabel}</td>
+          <td>${esc(d.motivo || '')}</td>
+          <td class="row-actions"><button class="btn btn-ghost btn-sm" title="Eliminar" data-ded-del="${d.id}">✕</button></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="4" class="muted center">Sin deducciones registradas en este período.</td></tr>';
+      $('ded-total').textContent = fmtRD(total);
+      tb.querySelectorAll('[data-ded-del]').forEach(b => b.addEventListener('click', async () => {
+        try {
+          const r = await window.api.deleteDeduccion(Number(b.dataset.dedDel));
+          if (!r.ok) throw new Error(r.error);
+          toast('Deducción eliminada', 'success');
+          renderDeducciones(empId, mes, anio);
+          loadNomina();
+        } catch (e) { toast(e.message, 'error'); }
+      }));
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function addDeduccion() {
+    const empId = Number($('nomina-emp').value);
+    if (!empId) { toast('Seleccione un empleado', 'error'); return; }
+    const mes = Number($('nomina-mes').value) || new Date().getMonth() + 1;
+    const anio = Number($('nomina-anio').value) || new Date().getFullYear();
+    const monto = Number($('ded-monto').value);
+    const motivo = $('ded-motivo').value.trim();
+    const quincena = Number($('ded-quincena').value) || 0;
+    if (!(monto > 0)) { toast('Ingrese un monto mayor que 0', 'error'); return; }
+    if (!motivo) { toast('Indique el motivo de la deducción', 'error'); return; }
+    try {
+      const res = await window.api.createDeduccion({ employee_id: empId, mes, anio, quincena, monto, motivo });
+      if (!res.ok) throw new Error(res.error);
+      toast('Deducción agregada', 'success');
+      $('ded-monto').value = '';
+      $('ded-motivo').value = '';
+      renderDeducciones(empId, mes, anio);
       loadNomina();
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -2836,6 +2895,13 @@
       showLogin();
     });
 
+    $('sidebar-toggle').addEventListener('click', () => {
+      const sb = document.querySelector('.sidebar');
+      sb.classList.toggle('collapsed');
+      const btn = $('sidebar-toggle');
+      btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀ Colapsar';
+    });
+
     document.querySelectorAll('.nav-item').forEach(n =>
       n.addEventListener('click', () => go(n.dataset.view)));
 
@@ -2946,6 +3012,7 @@
     $('btn-regalia-csv').addEventListener('click', exportRegaliaExcel);
     $('btn-he-save').addEventListener('click', saveHorasExtra);
     $('btn-inc-add').addEventListener('click', addIncentivo);
+    $('btn-ded-add').addEventListener('click', addDeduccion);
     $('btn-vp-save').addEventListener('click', savePagoVacaciones);
     $('btn-vp-delete').addEventListener('click', deletePagoVacaciones);
     $('vp-modalidad').addEventListener('change', () => {

@@ -160,7 +160,12 @@ function buildNominaData(mes, anio, vista) {
   }
   const pagosVacaciones = {};
   for (const pv of db.pagoVacaciones.listForPeriod(m, y)) pagosVacaciones[pv.employee_id] = pv;
-  const data = v === 'quincenal' ? nomina.calcNominaQuincenal(actives, m, y, extras, incentivos, pagosVacaciones)
+  const deduccionesManuales = {};
+  for (const d of db.deduccionesManuales.listForPeriod(m, y)) {
+    if (!deduccionesManuales[d.employee_id]) deduccionesManuales[d.employee_id] = [];
+    deduccionesManuales[d.employee_id].push(d);
+  }
+  const data = v === 'quincenal' ? nomina.calcNominaQuincenal(actives, m, y, extras, incentivos, pagosVacaciones, deduccionesManuales)
     : v === 'semanal' ? nomina.calcNominaSemanal(actives, m, y, extras, incentivos, pagosVacaciones)
       : v === 'diario' ? nomina.calcNominaDiaria(actives, m, y, extras, incentivos, pagosVacaciones)
         : nomina.calcNomina(actives, m, y, extras, incentivos, pagosVacaciones);
@@ -176,8 +181,8 @@ const NOMINA_MAIL_VIEWS = {
   },
   quincenal: {
     label: 'Quincenal',
-    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Quincena1', 'Quincena2Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Quincena2Neto', 'TotalNeto'],
-    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.quincena1, r.quincena2_bruto, r.afp, r.sfs, r.isr, r.retenciones, r.quincena2_neto, r.total_neto]
+    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Deducciones', 'Quincena1', 'Quincena2Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Quincena2Neto', 'TotalNeto'],
+    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.deducciones_manuales, r.quincena1, r.quincena2_bruto, r.afp, r.sfs, r.isr, r.retenciones, r.quincena2_neto, r.total_neto]
   },
   semanal: {
     label: 'Semanal',
