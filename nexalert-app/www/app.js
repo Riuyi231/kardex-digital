@@ -1525,7 +1525,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.13';
+  const CURRENT_APP_VERSION = '1.5.14';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1931,6 +1931,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
