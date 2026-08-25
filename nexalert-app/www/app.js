@@ -1525,7 +1525,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.9';
+  const CURRENT_APP_VERSION = '1.5.10';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1863,42 +1863,42 @@
   $('#filtro-hasta').addEventListener('change', pintarLista);
 
   $('#lista').addEventListener('click', (ev) => {
-    const asignarBtn = ev.target.closest('.asignar-btn');
-    if (asignarBtn) {
+    if (ev.target.closest('.asignar-btn-wrap') || ev.target.closest('.asignar-wrap')) {
       ev.stopPropagation();
-      const reportId = Number(asignarBtn.dataset.reportId);
-      const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
-      if (wrap) { wrap.classList.toggle('hidden'); wrap.querySelector('.asignar-select').focus(); }
-      return;
-    }
-    const asignarOk = ev.target.closest('.asignar-ok');
-    if (asignarOk) {
-      ev.stopPropagation();
-      const reportId = Number(asignarOk.dataset.reportId);
-      const sel = document.querySelector('.asignar-select[data-report-id="' + reportId + '"]');
-      if (sel) asignarDesdeLista(reportId, sel);
-      return;
-    }
-    const asignarCancel = ev.target.closest('.asignar-cancel');
-    if (asignarCancel) {
-      ev.stopPropagation();
-      const reportId = Number(asignarCancel.dataset.reportId);
-      const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
-      if (wrap) wrap.classList.add('hidden');
-      return;
-    }
-    const delBtn = ev.target.closest('.card-del-btn');
-    if (delBtn) {
-      ev.stopPropagation();
-      const delId = Number(delBtn.dataset.delId);
-      confirmAsync('Eliminar reporte', 'Seguro que quieres eliminar este reporte? Esta accion no se puede deshacer.').then((ok) => {
-        if (!ok) return;
-        api('/api/reportes/' + delId, { method: 'DELETE' }).then(() => {
-          toast('Reporte eliminado', 'ok');
-          state.reportes = state.reportes.filter((r) => r.id !== delId);
-          pintarLista();
-        }).catch((e) => toast(e.message, 'err'));
-      });
+      const asignarBtn = ev.target.closest('.asignar-btn');
+      if (asignarBtn) {
+        const reportId = Number(asignarBtn.dataset.reportId);
+        const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+        if (wrap) { wrap.classList.toggle('hidden'); wrap.querySelector('.asignar-select').focus(); }
+        return;
+      }
+      const asignarOk = ev.target.closest('.asignar-ok');
+      if (asignarOk) {
+        const reportId = Number(asignarOk.dataset.reportId);
+        const sel = document.querySelector('.asignar-select[data-report-id="' + reportId + '"]');
+        if (sel) asignarDesdeLista(reportId, sel);
+        return;
+      }
+      const asignarCancel = ev.target.closest('.asignar-cancel');
+      if (asignarCancel) {
+        const reportId = Number(asignarCancel.dataset.reportId);
+        const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+        if (wrap) wrap.classList.add('hidden');
+        return;
+      }
+      const delBtn = ev.target.closest('.card-del-btn');
+      if (delBtn) {
+        const delId = Number(delBtn.dataset.delId);
+        confirmAsync('Eliminar reporte', 'Seguro que quieres eliminar este reporte? Esta accion no se puede deshacer.').then((ok) => {
+          if (!ok) return;
+          api('/api/reportes/' + delId, { method: 'DELETE' }).then(() => {
+            toast('Reporte eliminado', 'ok');
+            state.reportes = state.reportes.filter((r) => r.id !== delId);
+            pintarLista();
+          }).catch((e) => toast(e.message, 'err'));
+        });
+        return;
+      }
       return;
     }
     const card = ev.target.closest('.rp-card');
@@ -1934,6 +1934,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
