@@ -213,6 +213,13 @@ app.post('/api/reportes/:id/estado', a.requireAuth('tecnico'), (req, res) => {
       }
     }
     res.json({ ok: true, data: out });
+    const ESTADO_LABELS = { en_proceso: 'En proceso', resuelto: 'Resuelto', espera_repuesto: 'En espera (repuesto)', espera_cliente: 'En espera (cliente)', abierto: 'Abierto' };
+    const gerenteTokens = d.getGerentePushTokens();
+    if (gerenteTokens.length) {
+      sendPush(gerenteTokens, 'Cambio de estado',
+        (rp.client_nombre || 'Cliente') + ' \u2014 ' + (ESTADO_LABELS[estado] || estado),
+        { reporteId: String(rp.id), tipo: 'estado' }).catch(() => {});
+    }
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
@@ -337,7 +344,7 @@ app.post('/api/sync', a.requireDevice, (req, res) => {
     }
     const reportesArr = Array.isArray(push.reportes) ? push.reportes : [];
     for (const rp of reportesArr) {
-      const existed = rp.id ? d.db.prepare('SELECT tecnico_id FROM reportes WHERE id = ?').get(rp.id) : null;
+      const existed = rp.id ? d.db.prepare('SELECT tecnico_id, estado FROM reportes WHERE id = ?').get(rp.id) : null;
       const r = d.upsertReporte(rp);
       if (r.applied) applied.reportes.push(r.id);
       const oldTech = existed ? String(existed.tecnico_id || '') : 'N/A';
@@ -360,6 +367,15 @@ app.post('/api/sync', a.requireDevice, (req, res) => {
         if (gerenteTokens.length) {
           console.log('PUSH GERENTE: nuevo reporte ' + rp.id + ' para ' + gerenteTokens.length + ' gerentes');
           sendPush(gerenteTokens, 'Nuevo reporte', cliente + (equipo ? ' - ' + equipo : '') + desc, { reporteId: String(rp.id), tipo: 'nuevo' }).catch((e) => console.log('PUSH ERR: ' + e.message));
+        }
+      }
+      if (existed && r.applied && rp.estado && existed.estado && rp.estado !== existed.estado) {
+        const cliente = rp.client_nombre || 'Cliente';
+        const ESTADO_LABELS = { en_proceso: 'En proceso', resuelto: 'Resuelto', espera_repuesto: 'En espera (repuesto)', espera_cliente: 'En espera (cliente)', abierto: 'Abierto' };
+        const gerenteTokens = d.getGerentePushTokens();
+        if (gerenteTokens.length) {
+          console.log('PUSH GERENTE: estado cambio reporte ' + rp.id + ' ' + existed.estado + '->' + rp.estado);
+          sendPush(gerenteTokens, 'Cambio de estado', cliente + ' \u2014 ' + (ESTADO_LABELS[rp.estado] || rp.estado), { reporteId: String(rp.id), tipo: 'estado' }).catch((e) => console.log('PUSH ERR: ' + e.message));
         }
       }
     }
@@ -513,7 +529,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.8';
+const APP_VERSION = '1.5.9';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -535,6 +551,7 @@ app.listen(PORT, '0.0.0.0', () => {
     try { d.autoArchiveResolved(); } catch (e) { /* noop */ }
   }, 30 * 1000);
 });
+
 
 
 

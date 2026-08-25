@@ -8,6 +8,9 @@
     },
     "SystemBars": {
       "insetsHandling": "disable"
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false
     }
   }
 }

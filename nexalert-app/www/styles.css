@@ -119,6 +119,8 @@ body.light #topbar { background: rgba(244, 246, 251, .85); }
 }
 .icon-btn:active { transform: scale(.9); background: var(--surface-3); }
 .icon-btn.spin { animation: spin 1s linear infinite; }
+.btn-monitoreo-top { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-monitoreo-top:active { background: var(--accent-2); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .badge-pend {
@@ -585,9 +587,11 @@ body.light #toast { background: #ffffff; border-color: rgba(60,70,100,.2); color
 .btn-danger:active { opacity: .8; }
 .espera-sub-btns { display: flex; gap: 10px; margin: 12px 0; }
 .espera-sub-btns button { flex: 1; padding: 12px; font-size: 14px; font-weight: 600; }
-.asignar-btn-wrap { margin-top: 8px; }
+.asignar-btn-wrap { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .asignar-btn { background: var(--accent); color: #fff; border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .asignar-btn:active { opacity: .8; }
+.card-del-btn { background: transparent; color: var(--red); border: 1px solid var(--red); padding: 5px 8px; border-radius: 8px; font-size: 12px; cursor: pointer; }
+.card-del-btn:active { background: var(--red-bg); }
 .asignar-wrap { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .asignar-wrap.hidden { display: none; }
 .asignar-select { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 13px; }

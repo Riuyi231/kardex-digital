@@ -456,7 +456,7 @@
           <span class="fecha">${fechaLarga(r.fecha)}</span>
         </div>
         ${state.rol === 'gerente' && state.tecnicos && state.tecnicos.length ? '<div class="asignar-wrap hidden" data-asignar-for="' + r.id + '"><select class="asignar-select" data-report-id="' + r.id + '"><option value="">Sin asignar</option>' + state.tecnicos.map((t) => '<option value="' + t.id + '"' + (Number(r.tecnico_id) === t.id ? ' selected' : '') + '>' + esc(t.nombre) + '</option>').join('') + '</select><button class="asignar-ok" data-report-id="' + r.id + '">OK</button><button class="asignar-cancel" data-report-id="' + r.id + '">X</button></div>' : ''}
-        ${state.rol === 'gerente' ? '<div class="asignar-btn-wrap"><button class="asignar-btn" data-report-id="' + r.id + '">' + (r.tecnico_id ? '👷 ' + esc(r.tecnico_nombre || 'Cambiar') : '👷 Asignar') + '</button></div>' : ''}
+        ${state.rol === 'gerente' ? '<div class="asignar-btn-wrap"><button class="asignar-btn" data-report-id="' + r.id + '">' + (r.tecnico_id ? '👷 ' + esc(r.tecnico_nombre || 'Cambiar') : '👷 Asignar') + '</button><button class="card-del-btn" data-del-id="' + r.id + '" title="Eliminar">🗑️</button></div>' : ''}
       </div>`).join('');
   }
 
@@ -1485,6 +1485,8 @@
     state.rol = (u && u.rol) || 'tecnico';
     const monBtn = $('#btn-monitoreo');
     if (monBtn) monBtn.classList.toggle('hidden', state.rol !== 'gerente');
+    const monTopBtn = $('#btn-monitoreo-top');
+    if (monTopBtn) monTopBtn.classList.toggle('hidden', state.rol !== 'gerente');
     $('#login').classList.add('hidden');
     $('#topbar').classList.remove('hidden');
     $('#view').classList.remove('hidden');
@@ -1523,23 +1525,32 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.8';
+  const CURRENT_APP_VERSION = '1.5.9';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
       const latest = data.data;
       if (latest && latest.version && latest.version !== CURRENT_APP_VERSION) {
+        toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
         if (NATIVO && latest.downloadUrl) {
-          toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
-          setTimeout(() => {
-            const url = latest.downloadUrl;
-            if (confirm('NexAlert v' + latest.version + ' esta disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\nNueva version: v' + latest.version + '\n\nDescargar e instalar actualizacion?')) {
-              toast('Descargando actualizacion...', 'ok');
-              window.location.href = url;
-            }
-          }, 2000);
-        } else {
-          toast('Nueva version v' + latest.version + ' disponible', 'ok');
+          const CU = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+          if (CU) {
+            setTimeout(async () => {
+              try {
+                toast('Descargando actualizacion...', 'ok');
+                const bundle = await CU.download({ url: latest.downloadUrl, version: latest.version });
+                await CU.set(bundle);
+              } catch (e) {
+                toast('Error al actualizar: ' + (e.message || e), 'err');
+              }
+            }, 2500);
+          } else {
+            setTimeout(() => {
+              if (confirm('NexAlert v' + latest.version + ' disponible.\n\nDescargar e instalar?')) {
+                window.location.href = latest.downloadUrl;
+              }
+            }, 2000);
+          }
         }
       }
     } catch (e) { /* noop */ }
@@ -1752,6 +1763,7 @@
   $('#btn-theme').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); toggleTheme(); });
   $('#btn-stats').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirDashboard(); });
   $('#btn-monitoreo').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirMonitoreo(); });
+  $('#btn-monitoreo-top').addEventListener('click', () => { abrirMonitoreo(); });
   $('#btn-archivados').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirArchivados(); });
   $('#btn-refresh').addEventListener('click', async () => {
     $('#top-dropdown').classList.add('hidden');
@@ -1875,6 +1887,20 @@
       if (wrap) wrap.classList.add('hidden');
       return;
     }
+    const delBtn = ev.target.closest('.card-del-btn');
+    if (delBtn) {
+      ev.stopPropagation();
+      const delId = Number(delBtn.dataset.delId);
+      confirmAsync('Eliminar reporte', 'Seguro que quieres eliminar este reporte? Esta accion no se puede deshacer.').then((ok) => {
+        if (!ok) return;
+        api('/api/reportes/' + delId, { method: 'DELETE' }).then(() => {
+          toast('Reporte eliminado', 'ok');
+          state.reportes = state.reportes.filter((r) => r.id !== delId);
+          pintarLista();
+        }).catch((e) => toast(e.message, 'err'));
+      });
+      return;
+    }
     const card = ev.target.closest('.rp-card');
     if (card) abrirDetalle(Number(card.dataset.id)).catch((e) => toast(e.message, 'err'));
   });
@@ -1908,6 +1934,7 @@
     mostrarLogin();
   }
 })();
+
 
 
 
