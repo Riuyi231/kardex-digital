@@ -3048,4 +3048,23 @@
 
   wire();
   init();
+
+  /* ============ AUTO-UPDATE LISTENERS ============ */
+  if (window.api.onUpdateAvailable) {
+    window.api.onUpdateAvailable((data) => {
+      toast('Nueva version v' + data.version + ' disponible. Descargando...', 'info', 5000);
+    });
+  }
+  if (window.api.onUpdateProgress) {
+    window.api.onUpdateProgress((data) => {
+      toast('Descargando actualizacion: ' + data.percent + '%', 'info', 2000);
+    });
+  }
+  if (window.api.onUpdateDownloaded) {
+    window.api.onUpdateDownloaded((data) => {
+      if (confirm('KARDEX Digital v' + data.version + ' descargado.\n\nSe cerrara la app para instalar la actualizacion.\nGuarda tu trabajo antes de continuar.\n\nInstalar ahora?')) {
+        window.api.updateInstall();
+      }
+    });
+  }
 })();

@@ -5,6 +5,13 @@ contextBridge.exposeInMainWorld('api', {
   logout: () => ipcRenderer.invoke('auth:logout'),
   me: () => ipcRenderer.invoke('auth:me'),
 
+  onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (_e, data) => cb(data)),
+  onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, data) => cb(data)),
+  onUpdateDownloaded: (cb) => ipcRenderer.on('update:downloaded', (_e, data) => cb(data)),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+
   listUsers: () => ipcRenderer.invoke('users:list'),
   createUser: (payload) => ipcRenderer.invoke('users:create', payload),
   updateUser: (payload) => ipcRenderer.invoke('users:update', payload),

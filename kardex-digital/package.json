@@ -23,6 +23,7 @@
     "@zxing/library": "^0.21.3",
     "bwip-js": "^4.11.2",
     "docxtemplater": "^3.69.3",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "jpeg-js": "^0.4.4",
     "nodemailer": "^9.0.4",
@@ -37,6 +38,12 @@
     "appId": "com.kardex.digital",
     "productName": "KARDEX Digital",
     "asar": false,
+    "publish": {
+      "provider": "github",
+      "owner": "Riuyi231",
+      "repo": "kardex-digital",
+      "releaseType": "release"
+    },
     "files": [
       "main.js",
       "preload.js",

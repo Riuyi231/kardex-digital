@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { autoUpdater } = require('electron-updater');
 
 (function loadEnvFile() {
   try {
@@ -402,6 +403,27 @@ function runAutoBackupIfDue() {
 
 function registerIpc() {
   registerServerHelperIpc();
+
+  ipcMain.handle('update:check', wrap(async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return { ok: true, updateInfo: result && result.updateInfo ? { version: result.updateInfo.version } : null };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }));
+  ipcMain.handle('update:download', wrap(async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }));
+  ipcMain.handle('update:install', wrap(() => {
+    autoUpdater.quitAndInstall(false, true);
+  }));
+
   ipcMain.handle('system:get-config', wrap(() => {
     const cfg = config.load(configPath());
     const cfgExists = fs.existsSync(configPath());
@@ -1298,6 +1320,32 @@ app.whenReady().then(async () => {
   app.setAppUserModelId('com.kardex.digital');
   license.setStorePath(path.join(path.dirname(configPath()), 'kardex-license.json'));
   const cfg = config.load(configPath());
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', (info) => {
+    console.log('[KARDEX] Update disponible:', info.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:available', { version: info.version });
+    }
+  });
+  autoUpdater.on('update-not-available', () => {
+    console.log('[KARDEX] Sin actualizaciones');
+  });
+  autoUpdater.on('download-progress', (p) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:progress', { percent: Math.round(p.percent) });
+    }
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[KARDEX] Update descargado:', info.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:downloaded', { version: info.version });
+    }
+  });
+  autoUpdater.on('error', (err) => {
+    console.error('[KARDEX] Error en auto-updater:', err.message);
+  });
   if (process.argv.includes('--server') || cfg.serverMode === 'server' || process.env.KARDEX_SERVER_MODE === '1') {
     isServer = true;
     await startServerMode();
@@ -1309,6 +1357,7 @@ app.whenReady().then(async () => {
   startNotifLoop();
   runAutoBackupIfDue();
   setInterval(runAutoBackupIfDue, 24 * 60 * 60 * 1000);
+  setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 5000);
   const licSt = license.getStatus();
   console.log('[KARDEX] Licencia:', licSt.valid
     ? (licSt.license.company + ' · tipo ' + licSt.license.type + ' · vence ' + (licSt.license.expires || 'nunca'))
