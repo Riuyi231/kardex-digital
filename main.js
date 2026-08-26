@@ -1377,6 +1377,9 @@ app.whenReady().then(async () => {
   });
   autoUpdater.on('error', (err) => {
     console.error('[KARDEX] Error en auto-updater:', err.message);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:error', { message: err.message });
+    }
   });
   if (process.argv.includes('--server') || cfg.serverMode === 'server' || process.env.KARDEX_SERVER_MODE === '1') {
     isServer = true;
