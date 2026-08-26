@@ -332,6 +332,48 @@ textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
 .toast.error { background: var(--danger); }
 @keyframes slidein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* ===== Update Bar ===== */
+.update-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  background: linear-gradient(135deg, #1e40af, #2563eb);
+  color: #fff; box-shadow: 0 4px 20px rgba(37,99,235,.4);
+  animation: slideDown .3s ease;
+}
+@keyframes slideDown { from { transform: translateY(-100%); } to { transform: none; } }
+.update-bar-inner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 20px; max-width: 100%;
+}
+.update-bar-info {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.update-bar-icon { font-size: 18px; }
+.update-bar-version {
+  background: rgba(255,255,255,.2); padding: 2px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+}
+.update-bar-progress-wrap {
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+}
+.update-bar-progress-track {
+  flex: 1; height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; overflow: hidden;
+}
+.update-bar-progress-fill {
+  height: 100%; background: #fff; border-radius: 3px;
+  transition: width .3s ease;
+}
+.update-bar-percent {
+  font-size: 12px; font-weight: 700; min-width: 36px; text-align: right;
+}
+.update-bar-actions {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.update-bar .btn-sm { font-size: 12px; padding: 5px 14px; }
+.update-bar .btn-primary { background: #fff; color: #1e40af; border: none; }
+.update-bar .btn-primary:hover { background: #e0e7ff; }
+.update-bar .btn-ghost { color: rgba(255,255,255,.7); background: none; border: none; font-size: 18px; padding: 4px 8px; cursor: pointer; }
+.update-bar .btn-ghost:hover { color: #fff; }
+
 /* ===== Nómina / Reportes / Vacaciones / Liquidación ===== */
 .num { text-align: right; }
 th.num { text-align: right; }

@@ -9,6 +9,27 @@
 <body>
   <div id="toasts"></div>
 
+  <!-- ===== UPDATE BAR ===== -->
+  <div id="update-bar" class="update-bar hidden">
+    <div class="update-bar-inner">
+      <div class="update-bar-info">
+        <span id="update-bar-icon" class="update-bar-icon">&#8635;</span>
+        <span id="update-bar-text">Buscando actualizaciones...</span>
+        <span id="update-bar-version" class="update-bar-version"></span>
+      </div>
+      <div id="update-bar-progress-wrap" class="update-bar-progress-wrap hidden">
+        <div class="update-bar-progress-track">
+          <div id="update-bar-progress-fill" class="update-bar-progress-fill" style="width:0%"></div>
+        </div>
+        <span id="update-bar-percent" class="update-bar-percent">0%</span>
+      </div>
+      <div id="update-bar-actions" class="update-bar-actions hidden">
+        <button id="update-bar-btn-install" class="btn btn-sm btn-primary">Instalar</button>
+        <button id="update-bar-btn-close" class="btn btn-sm btn-ghost">&times;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== LOGIN ===== -->
   <section id="login-view" class="login-view">
     <div class="login-card">

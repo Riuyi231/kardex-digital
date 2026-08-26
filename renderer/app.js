@@ -3138,27 +3138,57 @@
   wire();
   init();
 
-  /* ============ AUTO-UPDATE LISTENERS ============ */
+  /* ============ AUTO-UPDATE BAR ============ */
+  const ubBar = $('update-bar');
+  const ubText = $('update-bar-text');
+  const ubVersion = $('update-bar-version');
+  const ubIcon = $('update-bar-icon');
+  const ubProgressWrap = $('update-bar-progress-wrap');
+  const ubProgressFill = $('update-bar-progress-fill');
+  const ubPercent = $('update-bar-percent');
+  const ubActions = $('update-bar-actions');
+  const ubBtnInstall = $('update-bar-btn-install');
+  const ubBtnClose = $('update-bar-btn-close');
+
+  function showUpdateBar() { ubBar.classList.remove('hidden'); }
+  function hideUpdateBar() { ubBar.classList.add('hidden'); }
+
   if (window.api.onUpdateAvailable) {
     window.api.onUpdateAvailable((data) => {
-      toast('Nueva version v' + data.version + ' disponible. Descargando...', 'info', 8000);
+      showUpdateBar();
+      ubIcon.innerHTML = '&#8635;';
+      ubText.textContent = 'Nueva version disponible — descargando...';
+      ubVersion.textContent = 'v' + data.version;
+      ubProgressWrap.classList.remove('hidden');
+      ubActions.classList.add('hidden');
+      ubProgressFill.style.width = '0%';
+      ubPercent.textContent = '0%';
     });
   }
   if (window.api.onUpdateProgress) {
     window.api.onUpdateProgress((data) => {
-      toast('Descargando actualizacion: ' + data.percent + '%', 'info', 3000);
+      ubProgressFill.style.width = data.percent + '%';
+      ubPercent.textContent = data.percent + '%';
     });
   }
   if (window.api.onUpdateDownloaded) {
     window.api.onUpdateDownloaded((data) => {
-      if (confirm('KARDEX Digital v' + data.version + ' descargado.\n\nSe cerrara la app para instalar la actualizacion.\nGuarda tu trabajo antes de continuar.\n\nInstalar ahora?')) {
-        window.api.updateInstall();
-      }
+      ubIcon.innerHTML = '&#10003;';
+      ubText.textContent = 'Actualizacion v' + data.version + ' lista para instalar.';
+      ubProgressWrap.classList.add('hidden');
+      ubActions.classList.remove('hidden');
     });
   }
   if (window.api.onUpdateError) {
     window.api.onUpdateError((data) => {
-      toast('Error al actualizar: ' + (data.message || 'Error desconocido'), 'error', 10000);
+      ubIcon.innerHTML = '&#10007;';
+      ubText.textContent = 'Error: ' + (data.message || 'No se pudo descargar la actualizacion.');
+      ubVersion.textContent = '';
+      ubProgressWrap.classList.add('hidden');
+      ubActions.classList.remove('hidden');
+      ubBtnInstall.classList.add('hidden');
     });
   }
+  ubBtnInstall.addEventListener('click', () => { window.api.updateInstall(); });
+  ubBtnClose.addEventListener('click', () => { hideUpdateBar(); ubBtnInstall.classList.remove('hidden'); });
 })();
