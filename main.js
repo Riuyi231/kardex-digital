@@ -1353,7 +1353,7 @@ app.whenReady().then(async () => {
   license.setStorePath(path.join(path.dirname(configPath()), 'kardex-license.json'));
   const cfg = config.load(configPath());
 
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => {
     console.log('[KARDEX] Update disponible:', info.version);
