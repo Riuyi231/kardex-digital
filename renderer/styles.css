@@ -321,6 +321,14 @@ body {
 }
 textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
 
+/* ===== Reintegrar cambios ===== */
+.reintegrar-cambios {
+  margin-top: 12px; padding: 12px 14px; background: #f8fafc; border: 1px solid var(--border);
+  border-radius: 10px; animation: slidein .2s ease;
+}
+.reintegrar-cambios .form-row { margin-top: 8px; }
+.reintegrar-cambios .form-row:first-child { margin-top: 0; }
+
 /* ===== Toasts ===== */
 #toasts { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
 .toast {

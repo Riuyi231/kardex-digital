@@ -845,21 +845,43 @@
 
   /* ============ Reintegración ============ */
   let reintegrarEmpId = null;
-  function showReintegrar(empId) {
+  async function showReintegrar(empId) {
     reintegrarEmpId = empId;
     const hoy = new Date();
     $('reintegrar-fecha').value = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    $('reintegrar-mismo-puesto').checked = true;
+    $('reintegrar-cambios').classList.add('hidden');
+    try {
+      const er = await window.api.getEmployee(empId);
+      if (er.ok && er.data) {
+        $('reintegrar-puesto').value = er.data.puesto || '';
+        $('reintegrar-departamento').value = er.data.departamento || '';
+        $('reintegrar-sucursal').value = er.data.sucursal || '';
+        $('reintegrar-tipo-salario').value = er.data.tipo_salario || 'mensual';
+        $('reintegrar-salario').value = er.data.salario || '';
+      }
+    } catch (e) { /* ignore */ }
     $('reintegrar-modal').classList.remove('hidden');
   }
 
   async function confirmReintegrar() {
     if (!reintegrarEmpId) return;
     const fecha = $('reintegrar-fecha').value;
-    if (!fecha) { toast('Indique la fecha de reintegro', 'error'); return; }
+    if (!fecha) { toast('Indique la fecha de reintegro', 'error'); return;
+    }
+    const mismoPuesto = $('reintegrar-mismo-puesto').checked;
+    const extra = { fecha_ingreso: isoToDMY(fecha) };
+    if (!mismoPuesto) {
+      extra.puesto = $('reintegrar-puesto').value.trim();
+      extra.departamento = $('reintegrar-departamento').value.trim();
+      extra.sucursal = $('reintegrar-sucursal').value.trim();
+      extra.tipo_salario = $('reintegrar-tipo-salario').value;
+      extra.salario = Number($('reintegrar-salario').value) || 0;
+    }
     try {
-      const r = await window.api.setEmployeeStatus(reintegrarEmpId, 'activo', { fecha_ingreso: isoToDMY(fecha) });
+      const r = await window.api.setEmployeeStatus(reintegrarEmpId, 'activo', extra);
       if (!r.ok) throw new Error(r.error);
-      toast('Empleado reintegrado con nueva fecha de ingreso', 'success');
+      toast(mismoPuesto ? 'Empleado reintegrado con nueva fecha de ingreso' : 'Empleado reintegrado con nuevos datos', 'success');
       closeReintegrar();
       refreshEmployeeLists();
     } catch (e) { toast(e.message, 'error'); }
@@ -3127,6 +3149,9 @@
     $('btn-reintegrar-cancel').addEventListener('click', closeReintegrar);
     $('reintegrar-modal').addEventListener('click', (e) => { if (e.target === $('reintegrar-modal')) closeReintegrar(); });
     $('btn-reintegrar-confirm').addEventListener('click', confirmReintegrar);
+    $('reintegrar-mismo-puesto').addEventListener('change', function() {
+      $('reintegrar-cambios').classList.toggle('hidden', this.checked);
+    });
 
     $('btn-doc-logo').addEventListener('click', pickDocLogo);
     $('doc-logo-file').addEventListener('change', handleDocLogoFile);

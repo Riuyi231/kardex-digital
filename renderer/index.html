@@ -914,6 +914,35 @@
         <div class="form-row" style="margin-top:10px">
           <label>Fecha de reintegro <input type="date" id="reintegrar-fecha" /></label>
         </div>
+        <div class="form-row" style="margin-top:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="reintegrar-mismo-puesto" checked />
+            El empleado regresa al mismo puesto y departamento
+          </label>
+        </div>
+        <div id="reintegrar-cambios" class="reintegrar-cambios hidden">
+          <p class="muted" style="margin-bottom:8px;font-size:12px">Indique los nuevos datos del empleado:</p>
+          <div class="form-row">
+            <label>Puesto <input type="text" id="reintegrar-puesto" placeholder="Puesto" /></label>
+          </div>
+          <div class="form-row">
+            <label>Departamento <input type="text" id="reintegrar-departamento" placeholder="Departamento" /></label>
+          </div>
+          <div class="form-row">
+            <label>Sucursal <input type="text" id="reintegrar-sucursal" placeholder="Sucursal" /></label>
+          </div>
+          <div class="form-row" style="display:flex;gap:10px">
+            <label style="flex:1">Tipo de salario
+              <select id="reintegrar-tipo-salario">
+                <option value="mensual">Mensual</option>
+                <option value="quincenal">Quincenal</option>
+                <option value="semanal">Semanal</option>
+                <option value="diario">Diario</option>
+              </select>
+            </label>
+            <label style="flex:1">Salario (RD$) <input type="number" id="reintegrar-salario" min="0" step="0.01" placeholder="0.00" /></label>
+          </div>
+        </div>
       </div>
       <footer class="modal-footer">
         <button class="btn btn-ghost" id="btn-reintegrar-cancel">Cancelar</button>

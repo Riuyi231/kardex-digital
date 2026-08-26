@@ -494,11 +494,23 @@ const employees = {
     const opts = extra || {};
     const fechaBaja = status === 'inactivo' ? (opts.fecha_baja || nowIso()) : '';
     const fechaIngreso = status === 'activo' ? (opts.fecha_ingreso || u.fecha_ingreso) : u.fecha_ingreso;
-    run('UPDATE employees SET status = ?, fecha_baja = ?, fecha_ingreso = ?, updated_at = ? WHERE id = ?',
-      [status, fechaBaja, fechaIngreso, nowIso(), id]);
+    const nuevoPuesto = opts.puesto !== undefined ? opts.puesto : u.puesto;
+    const nuevoDepto = opts.departamento !== undefined ? opts.departamento : u.departamento;
+    const nuevoSucursal = opts.sucursal !== undefined ? opts.sucursal : u.sucursal;
+    const nuevoSalario = opts.salario !== undefined ? Number(opts.salario) : u.salario;
+    const nuevoTipoSalario = opts.tipo_salario || u.tipo_salario;
+    run('UPDATE employees SET status = ?, fecha_baja = ?, fecha_ingreso = ?, puesto = ?, departamento = ?, sucursal = ?, salario = ?, tipo_salario = ?, updated_at = ? WHERE id = ?',
+      [status, fechaBaja, fechaIngreso, nuevoPuesto, nuevoDepto, nuevoSucursal, Number(nuevoSalario) || 0, nuevoTipoSalario, nowIso(), id]);
     historial.log(id, 'status', u.status || 'activo', status, opts.userId || null);
     if (fechaBaja !== u.fecha_baja) historial.log(id, 'fecha_baja', u.fecha_baja, fechaBaja, opts.userId || null);
     if (fechaIngreso !== u.fecha_ingreso) historial.log(id, 'fecha_ingreso', u.fecha_ingreso, fechaIngreso, opts.userId || null);
+    if (opts.puesto !== undefined && opts.puesto !== u.puesto) historial.log(id, 'puesto', u.puesto, opts.puesto, opts.userId || null);
+    if (opts.departamento !== undefined && opts.departamento !== u.departamento) historial.log(id, 'departamento', u.departamento, opts.departamento, opts.userId || null);
+    if (opts.sucursal !== undefined && opts.sucursal !== u.sucursal) historial.log(id, 'sucursal', u.sucursal, opts.sucursal, opts.userId || null);
+    if (opts.salario !== undefined && Number(opts.salario) !== Number(u.salario)) {
+      historial.log(id, 'salario', u.salario, opts.salario, opts.userId || null);
+      salarioHistorial.record(id, Number(opts.salario), nuevoTipoSalario, 'Reintegración — cambio de salario', Number(u.salario));
+    }
     return employees.get(id);
   },
   create(data, userId) {
