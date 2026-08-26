@@ -466,7 +466,7 @@ function regaliaPascual(salarioMensualVal, fechaIngreso, fechaSalida) {
 // Regalía pascual ("sueldo 13") de toda la plantilla para un año.
 // Período: 1 dic del año anterior al 30 nov del año indicado (Art. 219).
 // Si el salario cambió durante el año, usa el salario promedio ponderado por meses.
-function calcRegalia(employees, anio, salarioHistorialFn) {
+function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn) {
   const y = Number(anio) || new Date().getFullYear();
   const inicioPeriodo = new Date(y - 1, 11, 1);
   const finPeriodo = new Date(y, 10, 30);
@@ -485,6 +485,23 @@ function calcRegalia(employees, anio, salarioHistorialFn) {
     const ini = ing && ing > inicioPeriodo ? ing : inicioPeriodo;
     const meses = Math.max(0, monthsBetween(ini, fin));
     const monto = round2(sm * meses / 12);
+
+    let cambios = [];
+    if (salarioHistorialListFn) {
+      const allChanges = salarioHistorialListFn(emp.id);
+      for (const ch of allChanges) {
+        const fc = parseDate(ch.fecha_cambio);
+        if (fc && fc >= inicioPeriodo && fc <= finPeriodo) {
+          cambios.push({
+            fecha: ch.fecha_cambio,
+            anterior: round2(ch.salario_anterior),
+            nuevo: round2(ch.salario),
+            motivo: ch.motivo || ''
+          });
+        }
+      }
+    }
+
     rows.push({
       id: emp.id,
       nombres: emp.nombres,
@@ -494,7 +511,8 @@ function calcRegalia(employees, anio, salarioHistorialFn) {
       departamento: emp.departamento,
       salario: sm,
       meses: round2(meses),
-      regalia: monto
+      regalia: monto,
+      cambios
     });
     total += monto;
   }

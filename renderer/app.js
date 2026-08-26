@@ -1605,7 +1605,17 @@
       const data = res.data;
       lastRegalia = data;
       $('regalia-period').textContent = data.periodo;
-      $('regalia-tbody').innerHTML = data.rows.length ? data.rows.map(r => `
+      $('regalia-tbody').innerHTML = data.rows.length ? data.rows.map(r => {
+        let cambiosHtml = '';
+        if (r.cambios && r.cambios.length) {
+          cambiosHtml = r.cambios.map(c => {
+            const f = c.fecha ? new Date(c.fecha).toLocaleDateString('es-DO') : '—';
+            return `<div class="salario-cambio"><span class="cambio-fecha">${f}</span>: ${fmtRD(c.anterior)} → ${fmtRD(c.nuevo)}${c.motivo ? ' <span class="cambio-motivo">(' + esc(c.motivo) + ')</span>' : ''}</div>`;
+          }).join('');
+        } else {
+          cambiosHtml = '<span class="muted">—</span>';
+        }
+        return `
         <tr>
           <td><strong>${esc(r.nombres)} ${esc(r.apellidos)}</strong></td>
           <td>${esc(r.cedula || '—')}</td>
@@ -1614,8 +1624,10 @@
           <td class="num">${fmtRD(r.salario)}</td>
           <td class="num">${(Number(r.meses) || 0).toLocaleString('es-DO', { maximumFractionDigits: 2 })}</td>
           <td class="num"><strong>${fmtRD(r.regalia)}</strong></td>
-        </tr>`).join('')
-        : '<tr><td colspan="7" class="muted center">Sin empleados con salario cargado.</td></tr>';
+          <td>${cambiosHtml}</td>
+        </tr>`;
+      }).join('')
+        : '<tr><td colspan="8" class="muted center">Sin empleados con salario cargado.</td></tr>';
       $('regalia-total').textContent = fmtRD(data.total);
       $('nomina-table-card').classList.add('hidden');
       $('regalia-card').classList.remove('hidden');
@@ -1631,9 +1643,15 @@
     }
     return doExportExcel(`regalia_${lastRegalia.anio}`, [{
       name: 'Regalía pascual',
-      headers: ['Empleado', 'Cedula', 'Puesto', 'Departamento', 'Salario', 'Meses', 'Regalia'],
-      rows: lastRegalia.rows.map(r => [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.meses, r.regalia]),
-      footer: ['TOTALES', '', '', '', '', '', lastRegalia.total]
+      headers: ['Empleado', 'Cédula', 'Puesto', 'Departamento', 'Salario', 'Meses', 'Regalía', 'Cambios salario'],
+      rows: lastRegalia.rows.map(r => {
+        const cambiosStr = (r.cambios || []).map(c => {
+          const f = c.fecha ? new Date(c.fecha).toLocaleDateString('es-DO') : '';
+          return f + ': ' + fmtRD(c.anterior) + ' → ' + fmtRD(c.nuevo) + (c.motivo ? ' (' + c.motivo + ')' : '');
+        }).join('; ');
+        return [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.meses, r.regalia, cambiosStr];
+      }),
+      footer: ['TOTALES', '', '', '', '', '', lastRegalia.total, '']
     }]);
   }
 

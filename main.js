@@ -912,7 +912,7 @@ function registerIpc() {
   ipcMain.handle('nomina:regalia', wrap((e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
     const actives = db.employees.list('', 'activo');
-    return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio);
+    return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio, db.salarioHistorial.listForEmployee);
   }));
 
   ipcMain.handle('export:excel', wrap(async (e, { filename, sheets } = {}) => {
