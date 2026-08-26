@@ -200,6 +200,7 @@ function migrate() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       employee_id INTEGER NOT NULL,
       salario REAL NOT NULL DEFAULT 0,
+      salario_anterior REAL NOT NULL DEFAULT 0,
       tipo_salario TEXT NOT NULL DEFAULT 'mensual',
       fecha_cambio TEXT NOT NULL,
       motivo TEXT NOT NULL DEFAULT ''
@@ -217,6 +218,16 @@ function migrate() {
   ensureVacacionesColumns();
   ensureHorasExtraColumns();
   ensureLiquidacionesColumns();
+  ensureSalarioHistorialColumns();
+}
+
+function ensureSalarioHistorialColumns() {
+  try {
+    const cols = new Set(all('PRAGMA table_info(salario_historial)').map((c) => c.name));
+    if (!cols.has('salario_anterior')) {
+      run("ALTER TABLE salario_historial ADD COLUMN salario_anterior REAL NOT NULL DEFAULT 0");
+    }
+  } catch (e) { /* tabla no existe aún */ }
 }
 
 function ensureEmployeeColumns() {
@@ -532,7 +543,7 @@ const employees = {
        Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '',
        d.foto || null, d.frente || null, d.reverso || null, nowIso(), id]);
     if (Number(data && data.salario) && Number(data.salario) !== Number(u.salario)) {
-      salarioHistorial.record(id, Number(data.salario), data.tipo_salario || u.tipo_salario, 'Cambio de salario');
+      salarioHistorial.record(id, Number(data.salario), data.tipo_salario || u.tipo_salario, 'Cambio de salario', Number(u.salario));
     }
     historial.logUpdate(u, data || {}, id, userId);
     return employees.get(id);
@@ -741,32 +752,63 @@ const deduccionesManuales = {
 
 // Historial de salarios para cálculo proporcional de salario 13.
 const salarioHistorial = {
-  record(employeeId, salario, tipo_salario, motivo) {
+  record(employeeId, salario, tipo_salario, motivo, salarioAnterior) {
     const now = nowIso();
-    run('INSERT INTO salario_historial (employee_id, salario, tipo_salario, fecha_cambio, motivo) VALUES (?,?,?,?,?)',
-      [Number(employeeId), Number(salario), String(tipo_salario || 'mensual'), now, String(motivo || '')]);
+    run('INSERT INTO salario_historial (employee_id, salario, salario_anterior, tipo_salario, fecha_cambio, motivo) VALUES (?,?,?,?,?,?)',
+      [Number(employeeId), Number(salario), Number(salarioAnterior) || 0, String(tipo_salario || 'mensual'), now, String(motivo || '')]);
   },
   listForEmployee(employeeId) {
     return all('SELECT * FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio', [Number(employeeId)]);
   },
   getSalarioPromedio(employeeId, anio) {
-    const rows = all('SELECT salario, fecha_cambio FROM salario_historial WHERE employee_id = ? AND strftime("%Y", fecha_cambio) = ? ORDER BY fecha_cambio',
-      [Number(employeeId), String(anio)]);
-    if (!rows.length) return null;
-    const emp = get('SELECT salario, tipo_salario, fecha_ingreso FROM employees WHERE id = ?', [Number(employeeId)]);
+    // Todos los registros de cambio de salario
+    const allChanges = all('SELECT salario, salario_anterior, fecha_cambio FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio',
+      [Number(employeeId)]);
+    if (!allChanges.length) return null;
+    const emp = get('SELECT salario FROM employees WHERE id = ?', [Number(employeeId)]);
     if (!emp) return null;
-    let totalMeses = 0;
-    let totalSalario = 0;
-    const inicio = new Date(anio + '-01-01');
-    for (let i = 0; i < rows.length; i++) {
-      const fechaFin = i + 1 < rows.length ? new Date(rows[i + 1].fecha_cambio) : new Date(anio + '-12-31');
-      const fechaInicio = new Date(rows[i].fecha_cambio);
-      if (fechaInicio < inicio) fechaInicio.setTime(inicio.getTime());
-      const meses = (fechaFin - fechaInicio) / (30.4375 * 86400000);
-      totalMeses += meses;
-      totalSalario += rows[i].salario * meses;
+
+    const inicioAnio = new Date(anio + '-01-01');
+    const finAnio = new Date(anio + '-12-31');
+
+    // Determinar salario vigente al 1 de enero
+    let salarioInicio = null;
+    for (const ch of allChanges) {
+      if (new Date(ch.fecha_cambio) < inicioAnio) {
+        salarioInicio = ch.salario; // el salario después del último cambio antes del año
+      }
     }
-    return totalMeses > 0 ? totalSalario / totalMeses : rows[rows.length - 1].salario;
+    // Si no hay cambios antes del año, usar salario_anterior del primer cambio del año
+    if (salarioInicio === null) {
+      const primer = allChanges.find(ch => new Date(ch.fecha_cambio) >= inicioAnio);
+      salarioInicio = primer && primer.salario_anterior > 0 ? primer.salario_anterior : emp.salario;
+    }
+
+    // Segmentos de salario durante el año
+    const cambiosEnAnio = allChanges.filter(ch => {
+      const fc = new Date(ch.fecha_cambio);
+      return fc >= inicioAnio && fc <= finAnio;
+    });
+
+    // Construir timeline
+    const timeline = [];
+    const primerCambio = cambiosEnAnio.length ? new Date(cambiosEnAnio[0].fecha_cambio) : finAnio;
+    const diasPre = Math.round((primerCambio - inicioAnio) / 86400000);
+    if (diasPre > 0) timeline.push({ salario: salarioInicio, dias: diasPre });
+
+    for (let i = 0; i < cambiosEnAnio.length; i++) {
+      const fechaInicio = new Date(cambiosEnAnio[i].fecha_cambio);
+      const fechaFin = i + 1 < cambiosEnAnio.length ? new Date(cambiosEnAnio[i + 1].fecha_cambio) : new Date(anio + '-12-31');
+      const dias = Math.round((fechaFin - fechaInicio) / 86400000);
+      if (dias > 0) timeline.push({ salario: cambiosEnAnio[i].salario, dias });
+    }
+
+    let totalDias = 0, totalSalarioDias = 0;
+    for (const seg of timeline) {
+      totalDias += seg.dias;
+      totalSalarioDias += seg.salario * seg.dias;
+    }
+    return totalDias > 0 ? totalSalarioDias / totalDias : salarioInicio;
   }
 };
 

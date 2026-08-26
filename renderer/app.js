@@ -103,6 +103,10 @@
     $('login-view').classList.add('hidden');
     $('app-view').classList.remove('hidden');
     $('user-name').textContent = currentUser.full_name || currentUser.username;
+    const uname = currentUser.full_name || currentUser.username || '';
+    const uparts = uname.trim().split(/\s+/);
+    const initials = uparts.length >= 2 ? uparts[0][0] + uparts[uparts.length - 1][0] : (uparts[0] || '')[0] || '';
+    $('user-name').setAttribute('data-initials', initials.toUpperCase());
     const rb = $('user-role-badge');
     rb.textContent = roleLabel(currentUser.role);
     rb.className = 'role-badge ' + roleClass(currentUser.role);
@@ -2896,10 +2900,10 @@
     });
 
     $('sidebar-toggle').addEventListener('click', () => {
-      const sb = document.querySelector('.sidebar');
+      const sb = $('sidebar');
       sb.classList.toggle('collapsed');
       const btn = $('sidebar-toggle');
-      btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀ Colapsar';
+      btn.title = sb.classList.contains('collapsed') ? 'Expandir menú' : 'Colapsar menú';
     });
 
     document.querySelectorAll('.nav-item').forEach(n =>
