@@ -82,14 +82,60 @@ function lerp(a, b, t) {
 
 class Context2D {
   constructor(canvas) {
+    this.canvas = canvas;
     this._canvas = canvas;
     this._fill = [0, 0, 0, 255];
+    this._stroke = [0, 0, 0, 255];
+    this._lineWidth = 1;
+    this._lineCap = 'butt';
+    this._lineJoin = 'miter';
+    this._miterLimit = 10;
+    this._globalAlpha = 1;
+    this._globalCompositeOp = 'source-over';
+    this._font = '10px sans-serif';
+    this._textAlign = 'start';
+    this._textBaseline = 'alphabetic';
+    this._shadowColor = 'rgba(0,0,0,0)';
+    this._shadowBlur = 0;
+    this._shadowOffsetX = 0;
+    this._shadowOffsetY = 0;
     this.imageSmoothingEnabled = true;
     this.imageSmoothingQuality = 'low';
+    this._path = [];
+    this._pathOpen = false;
+    this._saved = [];
   }
 
   set fillStyle(v) { this._fill = parseColor(v); }
   get fillStyle() { return this._fill; }
+  set strokeStyle(v) { this._stroke = parseColor(v); }
+  get strokeStyle() { return this._stroke; }
+  set lineWidth(v) { this._lineWidth = v; }
+  get lineWidth() { return this._lineWidth; }
+  set lineCap(v) { this._lineCap = v; }
+  get lineCap() { return this._lineCap; }
+  set lineJoin(v) { this._lineJoin = v; }
+  get lineJoin() { return this._lineJoin; }
+  set miterLimit(v) { this._miterLimit = v; }
+  get miterLimit() { return this._miterLimit; }
+  set globalAlpha(v) { this._globalAlpha = v; }
+  get globalAlpha() { return this._globalAlpha; }
+  set globalCompositeOperation(v) { this._globalCompositeOp = v; }
+  get globalCompositeOperation() { return this._globalCompositeOp; }
+  set font(v) { this._font = v; }
+  get font() { return this._font; }
+  set textAlign(v) { this._textAlign = v; }
+  get textAlign() { return this._textAlign; }
+  set textBaseline(v) { this._textBaseline = v; }
+  get textBaseline() { return this._textBaseline; }
+  set shadowColor(v) { this._shadowColor = v; }
+  get shadowColor() { return this._shadowColor; }
+  set shadowBlur(v) { this._shadowBlur = v; }
+  get shadowBlur() { return this._shadowBlur; }
+  set shadowOffsetX(v) { this._shadowOffsetX = v; }
+  get shadowOffsetX() { return this._shadowOffsetX; }
+  set shadowOffsetY(v) { this._shadowOffsetY = v; }
+  get shadowOffsetY() { return this._shadowOffsetY; }
 
   fillRect(x, y, w, h) {
     const out = this._canvas._data;
@@ -241,6 +287,153 @@ class Context2D {
       }
     }
   }
+
+  save() {
+    this._saved.push({
+      _fill: this._fill.slice(),
+      _stroke: this._stroke.slice(),
+      _lineWidth: this._lineWidth,
+      _globalAlpha: this._globalAlpha,
+      _font: this._font,
+      _textAlign: this._textAlign,
+      _textBaseline: this._textBaseline,
+      _path: this._path.slice(),
+      _pathOpen: this._pathOpen
+    });
+  }
+
+  restore() {
+    if (!this._saved.length) return;
+    const s = this._saved.pop();
+    this._fill = s._fill;
+    this._stroke = s._stroke;
+    this._lineWidth = s._lineWidth;
+    this._globalAlpha = s._globalAlpha;
+    this._font = s._font;
+    this._textAlign = s._textAlign;
+    this._textBaseline = s._textBaseline;
+    this._path = s._path;
+    this._pathOpen = s._pathOpen;
+  }
+
+  beginPath() { this._path = []; this._pathOpen = true; }
+  closePath() { this._pathOpen = false; }
+  moveTo(x, y) { this._path.push({ op: 'M', x, y }); }
+  lineTo(x, y) { this._path.push({ op: 'L', x, y }); }
+  arc(x, y, r, start, end, ccw) { this._path.push({ op: 'A', x, y, r, start, end, ccw }); }
+  arcTo(x1, y1, x2, y2, r) { this._path.push({ op: 'AT', x1, y1, x2, y2, r }); }
+  quadraticCurveTo(cpx, cpy, x, y) { this._path.push({ op: 'Q', cpx, cpy, x, y }); }
+  bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) { this._path.push({ op: 'C', cp1x, cp1y, cp2x, cp2y, x, y }); }
+  rect(x, y, w, h) { this._path.push({ op: 'R', x, y, w, h }); }
+
+  _rasterizePath(fill, stroke) {
+    const pts = this._path;
+    if (!pts.length) return;
+    const flatten = [];
+    for (const p of pts) {
+      if (p.op === 'M' || p.op === 'L') flatten.push({ x: p.x, y: p.y });
+      else if (p.op === 'R') {
+        flatten.push({ x: p.x, y: p.y });
+        flatten.push({ x: p.x + p.w, y: p.y });
+        flatten.push({ x: p.x + p.w, y: p.y + p.h });
+        flatten.push({ x: p.x, y: p.y + p.h });
+      }
+    }
+    if (flatten.length < 2) return;
+    if (fill) this._fillPoly(flatten);
+    if (stroke) this._strokePoly(flatten);
+  }
+
+  _fillPoly(pts) {
+    if (pts.length < 3) return;
+    const out = this._canvas._data;
+    const W = this._canvas.width;
+    const H = this._canvas.height;
+    if (!out) return;
+    const [r, g, b, a] = this._fill;
+    let minY = H, maxY = 0;
+    for (const p of pts) { minY = Math.min(minY, Math.floor(p.y)); maxY = Math.max(maxY, Math.ceil(p.y)); }
+    minY = Math.max(0, minY);
+    maxY = Math.min(H - 1, maxY);
+    for (let y = minY; y <= maxY; y++) {
+      const intersections = [];
+      for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length;
+        const a2 = pts[i], b2 = pts[j];
+        if ((a2.y <= y && b2.y > y) || (b2.y <= y && a2.y > y)) {
+          const t = (y - a2.y) / (b2.y - a2.y);
+          intersections.push(a2.x + t * (b2.x - a2.x));
+        }
+      }
+      intersections.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < intersections.length; i += 2) {
+        const x0 = Math.max(0, Math.floor(intersections[i]));
+        const x1 = Math.min(W - 1, Math.ceil(intersections[i + 1]));
+        for (let x = x0; x <= x1; x++) {
+          compositePixel(out, (y * W + x) << 2, r, g, b, a);
+        }
+      }
+    }
+  }
+
+  _strokePoly(pts) {
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      this._drawLine(pts[i].x, pts[i].y, pts[j].x, pts[j].y, this._stroke, this._lineWidth);
+    }
+  }
+
+  _drawLine(x0, y0, x1, y1, color, width) {
+    const out = this._canvas._data;
+    const W = this._canvas.width;
+    const H = this._canvas.height;
+    if (!out) return;
+    const [r, g, b, a] = color;
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    let cx = Math.round(x0), cy = Math.round(y0);
+    const hw = Math.floor(width / 2);
+    for (let step = 0; step < 100000; step++) {
+      for (let ox = -hw; ox <= hw; ox++) {
+        for (let oy = -hw; oy <= hw; oy++) {
+          const px = cx + ox, py = cy + oy;
+          if (px >= 0 && px < W && py >= 0 && py < H) {
+            compositePixel(out, (py * W + px) << 2, r, g, b, a);
+          }
+        }
+      }
+      if (cx === Math.round(x1) && cy === Math.round(y1)) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; cx += sx; }
+      if (e2 < dx) { err += dx; cy += sy; }
+    }
+  }
+
+  fill() { this._rasterizePath(true, false); }
+  stroke() { this._rasterizePath(false, true); }
+  fillAndStroke() { this._rasterizePath(true, true); }
+
+  clip() { /* clipping path stub — pdfjs-dist calls this but we skip for simplicity */ }
+
+  fillText(text, x, y) { /* stub — not needed for PDF rendering */ }
+  strokeText(text, x, y) { /* stub */ }
+  measureText(text) { return { width: (text || '').length * 6 }; }
+
+  translate(x, y) { /* stub */ }
+  rotate(angle) { /* stub */ }
+  scale(x, y) { /* stub */ }
+  setTransform(a, b, c, d, e, f) { /* stub */ }
+  transform(a, b, c, d, e, f) { /* stub */ }
+  resetTransform() { /* stub */ }
+  getTransform() { return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0, invertSelf() { return this; }, multiplySelf() { return this; }, translateSelf() { return this; }, scaleSelf() { return this; }, rotateSelf() { return this; } }; }
+
+  createLinearGradient() { return { addColorStop() {} }; }
+  createRadialGradient() { return { addColorStop() {} }; }
+  createPattern() { return null; }
+
+  isPointInPath() { return false; }
+  isPointInStroke() { return false; }
 }
 
 function encodePng(canvas) {

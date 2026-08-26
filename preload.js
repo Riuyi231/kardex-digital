@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('api', {
   setServerConfig: (payload) => ipcRenderer.invoke('system:set-config', payload),
   testServer: (url, token) => ipcRenderer.invoke('system:test-server', { url, token }),
   discoverServers: () => ipcRenderer.invoke('system:discover'),
+  setCloud: (payload) => ipcRenderer.invoke('system:set-cloud', payload),
+  testCloud: (url) => ipcRenderer.invoke('system:test-cloud', { url }),
+  cloudLogin: (username, password) => ipcRenderer.invoke('auth:cloud-login', { username, password }),
   wizardDone: () => ipcRenderer.invoke('system:wizard-done'),
   restartApp: () => ipcRenderer.invoke('system:restart'),
 

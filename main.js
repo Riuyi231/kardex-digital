@@ -21,6 +21,7 @@ const { autoUpdater } = require('electron-updater');
 
 const dbLocal = require('./services/db');
 const dbRpc = require('./services/db-rpc-client');
+const dbCloud = require('./services/db-cloud-client');
 const dbServer = require('./services/db-rpc-server');
 const config = require('./services/config');
 const discovery = require('./services/discovery');
@@ -107,7 +108,17 @@ function loadAiKeysFromDb() {
 async function openDb() {
   const dir = dataDir();
   const cfg = config.load(configPath());
-  if (cfg.serverUrl) {
+  if (cfg.cloud && cfg.cloud.enabled && cfg.cloud.url) {
+    dbCloud.configure({ url: cfg.cloud.url, token: cfg.cloud.token || '' });
+    db = dbCloud;
+    const ping = await dbCloud.ping();
+    if (ping.ok) {
+      loadAiKeysFromDb();
+      console.log('[KARDEX] Conectado al servidor cloud:', cfg.cloud.url);
+    } else {
+      console.warn('[KARDEX] Servidor cloud no alcanzable en', cfg.cloud.url + ':', ping.error);
+    }
+  } else if (cfg.serverUrl) {
     dbRpc.configure({ url: cfg.serverUrl, token: cfg.token });
     db = dbRpc;
     const ping = await dbRpc.ping();
@@ -427,16 +438,18 @@ function registerIpc() {
   ipcMain.handle('system:get-config', wrap(() => {
     const cfg = config.load(configPath());
     const cfgExists = fs.existsSync(configPath());
+    const cloudActive = cfg.cloud && cfg.cloud.enabled && cfg.cloud.url;
     return {
-      mode: isServer ? 'server' : (cfg.serverUrl ? 'client' : (cfg.serverMode === 'server' ? 'server' : 'local')),
+      mode: isServer ? 'server' : (cloudActive ? 'cloud' : (cfg.serverUrl ? 'client' : (cfg.serverMode === 'server' ? 'server' : 'local'))),
       serverMode: isServer ? 'server' : cfg.serverMode,
       url: cfg.serverUrl || '',
       token: cfg.token || '',
+      cloud: { url: cfg.cloud.url || '', token: cfg.cloud.token || '', enabled: !!cfg.cloud.enabled },
       serverPort: cfg.serverPort,
       serverName: cfg.serverName || config.DEFAULT_NAME,
       dataDir: dataDir(),
       isServer,
-      firstRun: !cfgExists && !cfg.wizardDone && !cfg.serverUrl && cfg.serverMode !== 'server',
+      firstRun: !cfgExists && !cfg.wizardDone && !cfg.serverUrl && cfg.serverMode !== 'server' && !(cfg.cloud && cfg.cloud.enabled),
       lanIps: discovery.lanIps(),
       discoveryPort: discovery.DEFAULT_PORT
     };
@@ -480,6 +493,32 @@ function registerIpc() {
   ipcMain.handle('system:discover', wrap(async () => {
     const list = await discovery.discoverServers();
     return { list };
+  }));
+
+  ipcMain.handle('system:set-cloud', wrap((e, { url, token, enabled } = {}) => {
+    const clean = String(url || '').trim().replace(/\/+$/, '');
+    config.save(configPath(), { cloud: { url: clean, token: String(token || ''), enabled: !!enabled } });
+    return config.load(configPath());
+  }));
+
+  ipcMain.handle('system:test-cloud', wrap(async (e, { url } = {}) => {
+    const u = String(url || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(u)) throw new Error('La direccion debe comenzar con http:// o https://');
+    const resp = await fetch(u + '/api/ping', { signal: AbortSignal.timeout(6000) });
+    const text = await resp.text();
+    let j;
+    try { j = JSON.parse(text); }
+    catch (e) { throw new Error('El servidor respondio de forma invalida'); }
+    if (!resp.ok || !j.ok) throw new Error(j.error || 'El servidor no reconocio la solicitud');
+    return j;
+  }));
+
+  ipcMain.handle('auth:cloud-login', wrap(async (e, { username, password } = {}) => {
+    const result = await dbCloud.cloudLogin(String(username || '').trim(), String(password || ''));
+    config.save(configPath(), { cloud: { url: config.load(configPath()).cloud.url, token: result.token, enabled: true } });
+    const user = db.auth.login ? db.auth.login(username, password) : result.user;
+    currentUser = user || result.user;
+    return { user: currentUser, token: result.token };
   }));
 
   ipcMain.handle('system:wizard-done', wrap(() => {

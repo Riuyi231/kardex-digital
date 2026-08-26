@@ -1,6 +1,6 @@
 const pdfjsLib = require('pdfjs-dist');
 const path = require('path');
-const { createCanvas, isNative } = require('./canvas');
+const { createCanvas } = require('./canvas');
 
 function NodeCanvasFactory() {
   return {
@@ -262,16 +262,15 @@ async function pdfToImages(buffer) {
     const count = Math.min(doc.numPages, 2);
     for (let n = 1; n <= count; n++) {
       let img = null;
-      if (isNative) {
+      try {
+        img = await renderPage(doc, n);
+      } catch (err) {
+        console.warn('[KARDEX] Render directo falló, intentando imágenes embebidas:', err.message);
         try {
-          img = await renderPage(doc, n);
-        } catch (err) {
-          console.error('Render fallido, intentando extracción de imágenes embebidas:', err.message);
           img = await firstEmbedded(doc, n);
+        } catch (err2) {
+          console.error('[KARDEX] Extracción embebida también falló:', err2.message);
         }
-      } else {
-        console.log('[KARDEX] Canvas en modo compatibilidad: usando imágenes embebidas del PDF.');
-        img = await firstEmbedded(doc, n);
       }
       if (img) pages.push(img);
     }
