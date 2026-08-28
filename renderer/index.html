@@ -975,6 +975,13 @@
               <small>Usar la base central de la empresa por la red.</small>
             </div>
           </label>
+          <label class="mode-card" data-mode="cloud">
+            <input type="radio" name="conn-mode" value="cloud" />
+            <div>
+              <strong>☁️ Conectar a la nube</strong>
+              <small>Usar el servidor de Internet (base de datos y OCR de cédulas).</small>
+            </div>
+          </label>
           <label class="mode-card" data-mode="server">
             <input type="radio" name="conn-mode" value="server" />
             <div>
@@ -998,6 +1005,25 @@
           <label for="server-token">Token (si el servidor lo requiere)</label>
           <input id="server-token" type="text" placeholder="Pégalo desde el panel del servidor" spellcheck="false" />
           <div id="server-test-result" class="error-box hidden"></div>
+        </div>
+
+        <div id="conn-cloud" class="form-stack hidden">
+          <p class="muted" style="margin:2px 0 6px">Esta PC usará la <b>base central y el OCR</b> del servidor de Internet (ej. un VPS con <b>https://kardex.duckdns.org</b>). No necesita ser servidor ni estar en la misma red.</p>
+          <label for="cloud-url">Dirección del servidor en Internet</label>
+          <input id="cloud-url" type="text" placeholder="https://kardex.duckdns.org" spellcheck="false" />
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="btn btn-ghost" id="btn-cloud-test">🔌 Probar conexión</button>
+            <span id="cloud-saved-note" class="muted"></span>
+          </div>
+          <div id="cloud-test-result" class="error-box hidden"></div>
+
+          <label for="cloud-user" style="margin-top:12px">Usuario</label>
+          <input id="cloud-user" type="text" placeholder="admin" spellcheck="false" autocomplete="off" />
+          <label for="cloud-pass">Contraseña</label>
+          <input id="cloud-pass" type="password" placeholder="••••••••" autocomplete="off" />
+          <button type="button" class="btn btn-ghost" id="btn-cloud-login" style="margin-top:6px">🔑 Conectar y guardar acceso</button>
+          <div id="cloud-login-result" class="error-box hidden"></div>
+          <p class="muted" style="margin-top:8px">Al conectar, KARDEX guarda las credenciales, se conecta a la nube y reinicia la app.</p>
         </div>
 
         <div id="conn-server" class="form-stack hidden">
@@ -1055,6 +1081,13 @@
             <div>
               <strong>🌐 Es un cliente</strong>
               <small>Conectarme a la base central de la empresa por la red.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="cloud">
+            <input type="radio" name="wizard-mode" value="cloud" />
+            <div>
+              <strong>☁️ Conectar a la nube</strong>
+              <small>Usar el servidor de Internet (base de datos y OCR).</small>
             </div>
           </label>
           <label class="mode-card" data-mode="local">

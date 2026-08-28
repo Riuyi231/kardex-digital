@@ -133,6 +133,23 @@
       const res = await window.api.getServerConfig();
       if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
       const cfg = res.data;
+      if (cfg.cloud && cfg.cloud.enabled && cfg.cloud.url) {
+        el.textContent = 'Verificando la nube: ' + cfg.cloud.url + '…';
+        el.className = 'conn-status';
+        try {
+          const t = await window.api.testCloud(cfg.cloud.url);
+          if (t && t.ok) {
+            el.textContent = '☁️ Conectado a la nube: ' + cfg.cloud.url;
+            el.className = 'conn-status ok';
+          } else {
+            throw new Error(t && t.error ? t.error : 'sin respuesta');
+          }
+        } catch (e2) {
+          el.textContent = 'Nube no alcanzable: ' + (e2 && e2.message ? e2.message : 'error');
+          el.className = 'conn-status err';
+        }
+        return;
+      }
       if (!cfg.url) {
         el.textContent = 'Base de datos local de esta PC';
         el.className = 'conn-status';
@@ -174,6 +191,7 @@
     });
     $('conn-client').classList.toggle('hidden', mode !== 'client');
     $('conn-server').classList.toggle('hidden', mode !== 'server');
+    $('conn-cloud').classList.toggle('hidden', mode !== 'cloud');
     $('btn-server-test').classList.toggle('hidden', mode !== 'client');
     const box = $('server-test-result');
     box.className = 'error-box hidden';
@@ -181,6 +199,10 @@
     $('discover-results').innerHTML = '';
     if (mode === 'server' && !$('server-token-gen').value.trim()) {
       $('server-token-gen').value = randomToken();
+    }
+    if (mode === 'cloud') {
+      const saved = connCfg && connCfg.cloud && connCfg.cloud.token;
+      $('cloud-saved-note').textContent = saved ? '✓ Acceso guardado para esta dirección. Puedes reconectar.' : '';
     }
   }
 
@@ -223,7 +245,8 @@
         $('server-name-gen').value = c.serverName || 'kardex';
         $('lan-port-hint').textContent = c.serverPort || 18006;
         $('server-token-gen').value = c.token || '';
-        const mode = (c.mode && ['local', 'client', 'server'].includes(c.mode)) ? c.mode : 'local';
+        $('cloud-url').value = (c.cloud && c.cloud.url) || '';
+        const mode = (c.mode && ['local', 'client', 'server', 'cloud'].includes(c.mode)) ? c.mode : 'local';
         setConnMode(mode);
         $('server-lan-ips').innerHTML = (c.lanIps && c.lanIps.length
           ? c.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (c.serverPort || 18006) + '</span>').join('')
@@ -334,9 +357,69 @@
     }
   }
 
+  async function testCloudConnection() {
+    const box = $('cloud-test-result');
+    box.className = 'error-box';
+    box.classList.remove('hidden');
+    box.textContent = 'Probando…';
+    try {
+      const res = await window.api.testCloud($('cloud-url').value);
+      if (res && res.ok) {
+        box.textContent = 'Conexión exitosa. El servidor en la nube está disponible.';
+        box.className = 'error-box success';
+      } else {
+        throw new Error(res && res.error ? res.error : 'sin respuesta');
+      }
+    } catch (e) {
+      box.textContent = (e && e.message) || 'No se pudo conectar';
+      box.className = 'error-box';
+    }
+  }
+
+  async function connectCloud() {
+    const box = $('cloud-login-result');
+    box.className = 'error-box';
+    box.classList.remove('hidden');
+    box.textContent = 'Conectando…';
+    const url = $('cloud-url').value.trim().replace(/\/+$/, '');
+    const user = $('cloud-user').value.trim();
+    const pass = $('cloud-pass').value;
+    try {
+      if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardex.duckdns.org)');
+      if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
+      if (!user || !pass) throw new Error('Escribe el usuario y la contraseña');
+      // Primero se guarda la URL para que el login la use; luego se autentica y
+      // se guarda el token JWT. Al final se reinicia conectado a la nube.
+      const saved = await window.api.setCloud({ url });
+      if (!saved || !saved.ok) throw new Error(saved && saved.error ? saved.error : 'Error guardando la dirección');
+      const res = await window.api.cloudLogin(user, pass);
+      if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error de autenticación');
+      const who = ((res.user && (res.user.full_name || res.user.username)) || '');
+      box.textContent = '✓ Conectado a la nube' + (who ? ' como ' + who : '') + '. Reiniciando…';
+      box.className = 'error-box success';
+      setTimeout(() => window.api.restartApp(), 1200);
+    } catch (e) {
+      box.textContent = (e && e.message) || 'No se pudo conectar a la nube';
+      box.className = 'error-box';
+    }
+  }
+
   async function saveServerConfig() {
     const mode = connMode;
     try {
+      if (mode === 'cloud') {
+        const url = $('cloud-url').value.trim().replace(/\/+$/, '');
+        if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardex.duckdns.org)');
+        if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
+        const savedTok = !!(connCfg && connCfg.cloud && connCfg.cloud.token);
+        const tokMatches = !!(connCfg && connCfg.cloud && connCfg.cloud.url === url);
+        if (!savedTok || !tokMatches) {
+          throw new Error('Pulsa "Conectar y guardar acceso" con el usuario y contraseña antes de aplicar');
+        }
+        toast('Conectando a la nube. Reiniciando…', 'info', 1500);
+        setTimeout(() => window.api.restartApp(), 1200);
+        return;
+      }
       if (mode === 'client') {
         const url = $('server-url').value.trim().replace(/\/+$/, '');
         if (!url) throw new Error('Escribe la dirección del servidor (ej. http://192.168.1.50:18006)');
@@ -421,6 +504,7 @@
         $('server-port').value = res.data.serverPort || 18006;
         $('server-name-gen').value = res.data.serverName || 'kardex';
         $('lan-port-hint').textContent = res.data.serverPort || 18006;
+        $('cloud-url').value = (res.data.cloud && res.data.cloud.url) || '';
         $('server-lan-ips').innerHTML = (res.data.lanIps && res.data.lanIps.length
           ? res.data.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (res.data.serverPort || 18006) + '</span>').join('')
           : '<span>No se detectaron IPs de red en esta PC</span>');
@@ -429,6 +513,7 @@
     setConnMode(wizardMode);
     $('server-modal').classList.remove('hidden');
     if (wizardMode === 'client') $('server-url').focus();
+    if (wizardMode === 'cloud') $('cloud-url').focus();
   }
 
   /* ============ Licencia ============ */
@@ -2900,6 +2985,10 @@
     $('btn-server-cancel').addEventListener('click', closeServerConfig);
     $('server-modal').addEventListener('click', (e) => { if (e.target === $('server-modal')) closeServerConfig(); });
     $('btn-server-test').addEventListener('click', testServerConnection);
+    $('btn-cloud-test').addEventListener('click', testCloudConnection);
+    $('btn-cloud-login').addEventListener('click', connectCloud);
+    ['cloud-url', 'cloud-user', 'cloud-pass'].forEach((id) =>
+      $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') connectCloud(); }));
     $('btn-server-save').addEventListener('click', saveServerConfig);
     $('btn-discover').addEventListener('click', discoverServers);
     $('btn-connect-name').addEventListener('click', connectByName);

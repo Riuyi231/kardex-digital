@@ -595,10 +595,12 @@ function registerIpc() {
   }));
 
   ipcMain.handle('auth:cloud-login', wrap(async (e, { username, password } = {}) => {
+    const cfg = config.load(configPath());
+    if (!cfg.cloud || !cfg.cloud.url) throw new Error('Configura primero la dirección del servidor cloud');
+    dbCloud.configure({ url: cfg.cloud.url, token: '' });
     const result = await dbCloud.cloudLogin(String(username || '').trim(), String(password || ''));
-    config.save(configPath(), { cloud: { url: config.load(configPath()).cloud.url, token: result.token, enabled: true } });
-    const user = db.auth.login ? db.auth.login(username, password) : result.user;
-    currentUser = user || result.user;
+    config.save(configPath(), { cloud: { url: cfg.cloud.url, token: result.token, enabled: true } });
+    currentUser = result.user || currentUser;
     return { user: currentUser, token: result.token };
   }));
 
