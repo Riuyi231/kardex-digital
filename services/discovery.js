@@ -34,7 +34,7 @@ function broadcastAddresses(ips) {
 }
 
 // Responde a los mensajes de descubrimiento de los clientes.
-function startDiscovery({ port = DEFAULT_PORT, rpcPort, name = 'Servidor KARDEX', tokenRequired = false } = {}) {
+function startDiscovery({ port = DEFAULT_PORT, rpcPort, name = 'Servidor KARDEX', tokenRequired = false, ocr = false } = {}) {
   return new Promise((resolve, reject) => {
     if (sock) { resolve(true); return; }
     const s = dgram.createSocket('udp4');
@@ -45,7 +45,8 @@ function startDiscovery({ port = DEFAULT_PORT, rpcPort, name = 'Servidor KARDEX'
       const payload = JSON.stringify({
         name: String(name),
         port: Number(rpcPort) || 0,
-        tokenRequired: !!tokenRequired
+        tokenRequired: !!tokenRequired,
+        ocr: !!ocr
       });
       try { s.send(Buffer.from(payload), rinfo.port, rinfo.address); } catch (e) { /* noop */ }
     });
@@ -83,7 +84,8 @@ function discoverServers({ port = DEFAULT_PORT, timeout = 2500, sweep = true } =
           ip: host,
           port: j.port,
           name: j.name || 'Servidor KARDEX',
-          tokenRequired: !!j.tokenRequired
+          tokenRequired: !!j.tokenRequired,
+          ocr: !!j.ocr
         });
       }
     });

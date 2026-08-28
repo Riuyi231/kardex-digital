@@ -65,6 +65,45 @@ let db = null;
 let serverTray = null;
 let isServer = false;
 
+// Envía un archivo al servidor KARDEX para que ejecute el OCR remoto y
+// devuelva los campos de la cédula con el mismo shape que processFile local.
+async function processCedulaRemote(filePath, serverUrl, token) {
+  if (!fs.existsSync(filePath)) throw new Error('El archivo no existe');
+  const data = fs.readFileSync(filePath).toString('base64');
+  const name = path.basename(filePath);
+  const url = String(serverUrl).replace(/\/+$/, '') + '/ocr';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-kardex-token': token || '',
+        'x-kardex-node': require('./services/machine').machineId()
+      },
+      body: JSON.stringify({ name, data })
+    });
+  } catch (e) {
+    throw new Error('No se pudo contactar el servidor para el OCR remoto: ' + (e.message || e));
+  }
+  // 404 => el servidor no ofrece el endpoint OCR (versión antigua). Señalizamos
+  // para que el llamador pueda degradar a OCR local.
+  if (resp.status === 404) {
+    const err = new Error('OCR remoto no disponible en el servidor');
+    err.code = 'OCR_REMOTE_UNAVAILABLE';
+    throw err;
+  }
+  const payload = await resp.json().catch(() => null);
+  if (!payload) throw new Error('El servidor devolvió una respuesta inválida');
+  if (payload.ok) {
+    return {
+      ...payload.data,
+      fileName: payload.data && payload.data.name ? payload.data.name : name
+    };
+  }
+  throw new Error('OCR remoto falló: ' + (payload.error || 'error desconocido'));
+}
+
 function dataDir() {
   if (process.env.KARDEX_DATA_DIR) return process.env.KARDEX_DATA_DIR;
   if (app.isPackaged && process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -283,7 +322,8 @@ async function startServerMode() {
   await discovery.startDiscovery({
     rpcPort: info.port,
     name: serverName,
-    tokenRequired: !!cfg.token
+    tokenRequired: !!cfg.token,
+    ocr: true
   });
   registerServerIpc();
   createServerTray(info, dir, serverName);
@@ -662,6 +702,22 @@ function registerIpc() {
 
   ipcMain.handle('cedula:process', wrap(async (e, { path: filePath }) => {
     requireRole(['admin', 'editor']);
+    const cfg = config.load(configPath());
+    // En modo cliente conectado a un servidor que ofrece OCR remoto, delegamos
+    // el procesamiento al equipo servidor (p.ej. la PC de 64 bits donde el OCR
+    // funciona) en lugar de ejecutar el OCR localmente (frágil en 32 bits).
+    if (cfg.serverUrl) {
+      try {
+        return await processCedulaRemote(filePath, cfg.serverUrl, cfg.token);
+      } catch (err) {
+        // Si el servidor no expone el endpoint OCR (versión antigua), degradamos
+        // al OCR local para no bloquear la carga de la cédula.
+        if (err && err.code === 'OCR_REMOTE_UNAVAILABLE') {
+          return await processFile(filePath);
+        }
+        throw err;
+      }
+    }
     return await processFile(filePath);
   }));
 

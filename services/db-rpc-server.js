@@ -3,9 +3,11 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const db = require('./db');
 const { NS_METHODS, TOP_METHODS } = require('./db-api');
+const { processFile } = require('./cedula');
 
 let server = null;
 let chain = Promise.resolve();
@@ -187,7 +189,70 @@ async function handleRequest(req, res, cfg) {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/ocr') {
+    if (currentToken && !sameToken(String(req.headers['x-kardex-token'] || ''), currentToken)) {
+      json(res, 401, { ok: false, error: 'Token no autorizado' });
+      return;
+    }
+    const node = touchNode(req.headers['x-kardex-node'], req.socket.remoteAddress);
+    if (node && node.denied) {
+      json(res, 403, {
+        ok: false,
+        error: 'Límite de puestos alcanzado: la licencia del servidor permite ' + currentMaxNodes +
+          ' puesto(s) de red y todos están ocupados. Contacta al proveedor para aumentar los puestos.'
+      });
+      return;
+    }
+    let body;
+    try {
+      body = await readBody(req, cfg.bodyLimit);
+    } catch (e) {
+      json(res, 400, { ok: false, error: 'Error leyendo la solicitud' });
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch (e) {
+      json(res, 400, { ok: false, error: 'JSON inválido' });
+      return;
+    }
+    // Ejecutamos también por la cola global (enqueue) para serializar las
+    // peticiones de OCR: tesseract usa un único worker y no tolera concurrencia.
+    try {
+      const data = await enqueue(() => handleOcr(parsed));
+      json(res, 200, { ok: true, data });
+    } catch (e) {
+      json(res, 200, { ok: false, error: (e && e.message) ? e.message : String(e) });
+    }
+    return;
+  }
+
   json(res, 404, { ok: false, error: 'No encontrado' });
+}
+
+// Procesa una solicitud de OCR remoto. `body` = { name, data } donde `data`
+// es el contenido del PDF/imagen en base64 (o string). Escribe a un archivo
+// temporal y delega en el pipeline local de cédula (processFile), preservando
+// el mismo shape de respuesta que usa el renderer.
+async function handleOcr(body) {
+  const parsed = body || {};
+  const name = String(parsed.name || 'cedula.pdf').slice(0, 200);
+  if (parsed.data == null) throw new Error('No se recibió el archivo');
+  const isImage = /\.(png|jpe?g|webp|bmp|gif)$/i.test(name);
+  if (!/\.pdf$/i.test(name) && !isImage) {
+    throw new Error('Solo se admiten archivos PDF, PNG o JPG');
+  }
+  const ext = isImage ? path.extname(name).toLowerCase() : '.pdf';
+  const tmpFile = path.join(os.tmpdir(), `kardex-ocr-${crypto.randomBytes(6).toString('hex')}${ext}`);
+  try {
+    fs.writeFileSync(tmpFile, Buffer.from(String(parsed.data), 'base64'));
+    const result = await processFile(tmpFile);
+    // Sustituye el nombre de archivo temporal por el original para el cliente.
+    return { name, ...result };
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch (e) { /* noop */ }
+  }
 }
 
 async function start(opts = {}) {
