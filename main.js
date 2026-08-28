@@ -104,6 +104,47 @@ async function processCedulaRemote(filePath, serverUrl, token) {
   throw new Error('OCR remoto falló: ' + (payload.error || 'error desconocido'));
 }
 
+// Envía un archivo al servidor cloud (internet, OAuth Bearer) para que ejecute el
+// OCR y devuelva los campos de la cédula con el mismo shape que processFile local.
+async function processCedulaCloud(filePath, cloudUrl, token) {
+  if (!fs.existsSync(filePath)) throw new Error('El archivo no existe');
+  const data = fs.readFileSync(filePath).toString('base64');
+  const name = path.basename(filePath);
+  const url = String(cloudUrl).replace(/\/+$/, '') + '/api/ocr';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + (token || ''),
+        'x-kardex-node': require('./services/machine').machineId()
+      },
+      body: JSON.stringify({ name, data })
+    });
+  } catch (e) {
+    throw new Error('No se pudo contactar el servidor cloud para el OCR: ' + (e.message || e));
+  }
+  if (resp.status === 404) {
+    const err = new Error('OCR en la nube no disponible en el servidor');
+    err.code = 'OCR_REMOTE_UNAVAILABLE';
+    throw err;
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    const payload = await resp.json().catch(() => null);
+    throw new Error('Sin autorización para el OCR en la nube: ' + ((payload && payload.error) || resp.status));
+  }
+  const payload = await resp.json().catch(() => null);
+  if (!payload) throw new Error('El servidor cloud devolvió una respuesta inválida');
+  if (payload.ok) {
+    return {
+      ...payload.data,
+      fileName: payload.data && payload.data.name ? payload.data.name : name
+    };
+  }
+  throw new Error('OCR en la nube falló: ' + (payload.error || 'error desconocido'));
+}
+
 function dataDir() {
   if (process.env.KARDEX_DATA_DIR) return process.env.KARDEX_DATA_DIR;
   if (app.isPackaged && process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -703,7 +744,18 @@ function registerIpc() {
   ipcMain.handle('cedula:process', wrap(async (e, { path: filePath }) => {
     requireRole(['admin', 'editor']);
     const cfg = config.load(configPath());
-    // En modo cliente conectado a un servidor que ofrece OCR remoto, delegamos
+    const cloudActive = !!(cfg.cloud && cfg.cloud.enabled && cfg.cloud.url);
+    // En modo cloud, la PC sube el PDF y el servidor en internet ejecuta el OCR.
+    if (cloudActive) {
+      try {
+        return await processCedulaCloud(filePath, cfg.cloud.url, cfg.cloud.token);
+      } catch (err) {
+        // Si el servidor cloud no expone aún el endpoint OCR, seguimos bajando
+        // de nivel (servidor LAN → local) en lugar de bloquear la carga.
+        if (err && err.code !== 'OCR_REMOTE_UNAVAILABLE') throw err;
+      }
+    }
+    // En modo cliente conectado a un servidor LAN que ofrece OCR remoto, delegamos
     // el procesamiento al equipo servidor (p.ej. la PC de 64 bits donde el OCR
     // funciona) en lugar de ejecutar el OCR localmente (frágil en 32 bits).
     if (cfg.serverUrl) {
