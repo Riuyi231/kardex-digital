@@ -21,13 +21,19 @@ function NodeCanvasFactory() {
 }
 
 function makeDocumentOptions(buffer) {
-  return {
+  const opts = {
     data: new Uint8Array(buffer),
     canvasFactory: new NodeCanvasFactory(),
     standardFontDataUrl: path.join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'standard_fonts') + path.sep
   };
+  // En el shim (sin canvas nativo) pdfjs sólo puede pintar texto mediante
+  // ctx.fillText()/strokeText() con el glifo bitmap propio. Con el canvas
+  // nativo dejamos el render por rutas por defecto (que es el que funciona).
+  if (require('./canvas').implementation === 'shim') {
+    opts.disableFontFace = false;
+  }
+  return opts;
 }
-
 function pickScale(viewport) {
   const target = 1500;
   const base = Math.max(2.2, target / viewport.width);
