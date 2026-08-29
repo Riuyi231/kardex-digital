@@ -385,7 +385,7 @@
     const user = $('cloud-user').value.trim();
     const pass = $('cloud-pass').value;
     try {
-      if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardex.duckdns.org)');
+      if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardexdigital.duckdns.org)');
       if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
       if (!user || !pass) throw new Error('Escribe el usuario y la contraseña');
       // Primero se guarda la URL para que el login la use; luego se autentica y
@@ -409,7 +409,7 @@
     try {
       if (mode === 'cloud') {
         const url = $('cloud-url').value.trim().replace(/\/+$/, '');
-        if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardex.duckdns.org)');
+        if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardexdigital.duckdns.org)');
         if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
         const savedTok = !!(connCfg && connCfg.cloud && connCfg.cloud.token);
         const tokMatches = !!(connCfg && connCfg.cloud && connCfg.cloud.url === url);
