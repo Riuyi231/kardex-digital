@@ -298,7 +298,7 @@ app.post('/api/reportes', a.requireAuth('tecnico'), (req, res) => {
     const assignedId = req.body.tecnico_id ? Number(req.body.tecnico_id) : null;
     let assignedName = '';
     if (assignedId) {
-      const tRow = d.db.prepare('SELECT id, nombre FROM usuarios WHERE id = ? AND activo = 1').get(assignedId);
+      const tRow = d.db.prepare('SELECT id, nombre FROM tecnicos WHERE id = ? AND activo = 1').get(assignedId);
       if (tRow) assignedName = tRow.nombre;
     }
     const out = d.crearReporte({
@@ -351,7 +351,7 @@ app.post('/api/sync', a.requireDevice, (req, res) => {
       if (r.applied) applied.reportes.push(r.id);
       const oldTech = existed ? String(existed.tecnico_id || '') : 'N/A';
       const newTech = rp.tecnico_id ? String(rp.tecnico_id) : '';
-      if (existed && rp.tecnico_id && oldTech !== newTech) {
+      if (existed && r.applied && rp.tecnico_id && oldTech !== newTech) {
         console.log('PUSH TRIGGER: reporte ' + rp.id + ' tech ' + oldTech + ' -> ' + newTech);
         const tokens = d.getPushTokens(Number(rp.tecnico_id));
         console.log('PUSH TRIGGER: tokens=' + tokens.length + ' for tecnico_id=' + rp.tecnico_id);

@@ -61,6 +61,7 @@ function init() {
       adjuntos TEXT DEFAULT '[]',
       lat REAL,
       lng REAL,
+      asignado_at TEXT,
       updated_at TEXT NOT NULL
     );
 
@@ -120,6 +121,7 @@ function init() {
   if (!rpCols.includes('adjuntos')) db.exec('ALTER TABLE reportes ADD COLUMN adjuntos TEXT DEFAULT \'[]\'');
   if (!rpCols.includes('lat')) db.exec('ALTER TABLE reportes ADD COLUMN lat REAL');
   if (!rpCols.includes('lng')) db.exec('ALTER TABLE reportes ADD COLUMN lng REAL');
+  if (!rpCols.includes('asignado_at')) db.exec('ALTER TABLE reportes ADD COLUMN asignado_at TEXT');
   const techCols = db.prepare('PRAGMA table_info(tecnicos)').all().map((c) => c.name);
   if (!techCols.includes('rol')) db.exec("ALTER TABLE tecnicos ADD COLUMN rol TEXT DEFAULT 'tecnico'");
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_fotos_rn ON fotos (reporte_id, nombre)');
@@ -183,13 +185,14 @@ function reportePublico(r) {
     adjuntos: arrAdjuntos(r.adjuntos),
     lat: r.lat != null ? Number(r.lat) : null,
     lng: r.lng != null ? Number(r.lng) : null,
+    asignado_at: r.asignado_at || null,
     updated_at: r.updated_at
   };
 }
 
 function upsertReporte(rp) {
   const id = Number(rp.id);
-  const existing = db.prepare('SELECT id, updated_at, adjuntos FROM reportes WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT id, updated_at, adjuntos, tecnico_id, asignado_at FROM reportes WHERE id = ?').get(id);
   const pushedAt = fechaLocalUTC(rp.updated_at || rp.creado);
   if (existing && existing.updated_at >= pushedAt) {
     return { applied: false, id };
@@ -199,10 +202,13 @@ function upsertReporte(rp) {
   const serverAdj = existing ? arrAdjuntos(existing.adjuntos) : [];
   const merged = [...new Set([...serverAdj, ...incomingAdj])];
   const adjuntos = JSON.stringify(merged);
+  let asignadoAt = rp.asignado_at || null;
+  if (!asignadoAt && existing && existing.asignado_at) asignadoAt = existing.asignado_at;
+  if (!asignadoAt && rp.tecnico_id) asignadoAt = pushedAt;
   db.prepare(`
     INSERT INTO reportes (id, client_id, client_nombre, equipo_nombre, descripcion, fecha, estado, prioridad,
-      solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       client_id = excluded.client_id,
       client_nombre = excluded.client_nombre,
@@ -220,11 +226,13 @@ function upsertReporte(rp) {
       adjuntos = excluded.adjuntos,
       lat = COALESCE(excluded.lat, reportes.lat),
       lng = COALESCE(excluded.lng, reportes.lng),
+      asignado_at = COALESCE(excluded.asignado_at, reportes.asignado_at),
       updated_at = excluded.updated_at
   `).run(id, rp.client_id || null, rp.client_nombre || '', rp.equipo_nombre || '', String(rp.descripcion || ''),
     rp.fecha || '', rp.estado || 'abierto', rp.prioridad || 'normal', rp.solucion || '',
     rp.tecnico_id || null, rp.tecnico_nombre || '', rp.resuelto_at || '', rp.archivado ? 1 : 0, deleted, adjuntos,
-    rp.lat != null ? Number(rp.lat) : null, rp.lng != null ? Number(rp.lng) : null, pushedAt);
+    rp.lat != null ? Number(rp.lat) : null, rp.lng != null ? Number(rp.lng) : null,
+    asignadoAt, pushedAt);
   seq('reporte_upsert', id, '');
   return { applied: true, id };
 }
@@ -332,10 +340,11 @@ function crearReporte(data) {
   const ahora = nowUTC();
   const tecnicoId = Number(data.tecnico_id) || null;
   const tecnicoNombre = data.tecnico_nombre || '';
+  const asignadoAt = tecnicoId ? ahora : null;
   db.prepare(`
     INSERT INTO reportes (id, client_id, client_nombre, equipo_nombre, descripcion, fecha, estado,
-      prioridad, solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'abierto', ?, '', ?, ?, NULL, 0, 0, '[]', ?, ?, ?)
+      prioridad, solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'abierto', ?, '', ?, ?, NULL, 0, 0, '[]', ?, ?, ?, ?)
   `).run(
     id,
     data.client_id || null,
@@ -348,6 +357,7 @@ function crearReporte(data) {
     tecnicoNombre,
     data.lat != null ? Number(data.lat) : null,
     data.lng != null ? Number(data.lng) : null,
+    asignadoAt,
     ahora
   );
   seq('reporte_upsert', id, '');
@@ -553,8 +563,10 @@ function getReportesAll() {
 
 function asignarReporte(reporteId, tecnicoId, tecnicoNombre) {
   const now = nowUTC();
-  db.prepare('UPDATE reportes SET tecnico_id = ?, tecnico_nombre = ?, updated_at = ? WHERE id = ?')
-    .run(tecnicoId || null, tecnicoNombre || '', now, reporteId);
+  const existing = db.prepare('SELECT asignado_at FROM reportes WHERE id = ?').get(reporteId);
+  const asignadoAt = (existing && existing.asignado_at) ? existing.asignado_at : (tecnicoId ? now : null);
+  db.prepare('UPDATE reportes SET tecnico_id = ?, tecnico_nombre = ?, asignado_at = ?, updated_at = ? WHERE id = ?')
+    .run(tecnicoId || null, tecnicoNombre || '', asignadoAt, now, reporteId);
   seq('reporte_upsert', reporteId, '');
   db.prepare('INSERT INTO reporte_eventos (reporte_id, tipo, detalle, autor, creado) VALUES (?, ?, ?, ?, ?)')
     .run(reporteId, 'tecnico', 'Reasignado a ' + (tecnicoNombre || 'Sin asignar') + '.', 'Gerente', now);
