@@ -62,6 +62,9 @@ function init() {
       lat REAL,
       lng REAL,
       asignado_at TEXT,
+      grupo_id TEXT DEFAULT '',
+      grupo_nombre TEXT DEFAULT '',
+      enviar_grupo INTEGER DEFAULT 1,
       updated_at TEXT NOT NULL
     );
 
@@ -122,9 +125,16 @@ function init() {
   if (!rpCols.includes('lat')) db.exec('ALTER TABLE reportes ADD COLUMN lat REAL');
   if (!rpCols.includes('lng')) db.exec('ALTER TABLE reportes ADD COLUMN lng REAL');
   if (!rpCols.includes('asignado_at')) db.exec('ALTER TABLE reportes ADD COLUMN asignado_at TEXT');
+  if (!rpCols.includes('grupo_id')) db.exec("ALTER TABLE reportes ADD COLUMN grupo_id TEXT DEFAULT ''");
+  if (!rpCols.includes('grupo_nombre')) db.exec("ALTER TABLE reportes ADD COLUMN grupo_nombre TEXT DEFAULT ''");
+  if (!rpCols.includes('enviar_grupo')) db.exec('ALTER TABLE reportes ADD COLUMN enviar_grupo INTEGER DEFAULT 1');
   const techCols = db.prepare('PRAGMA table_info(tecnicos)').all().map((c) => c.name);
   if (!techCols.includes('rol')) db.exec("ALTER TABLE tecnicos ADD COLUMN rol TEXT DEFAULT 'tecnico'");
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_fotos_rn ON fotos (reporte_id, nombre)');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_reportes_estado ON reportes (estado, deleted, archivado)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_reportes_tecnico ON reportes (tecnico_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_reportes_fecha ON reportes (fecha)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_reportes_updated ON reportes (updated_at)`);
 }
 
 function getSetting(key, def) {
@@ -186,6 +196,9 @@ function reportePublico(r) {
     lat: r.lat != null ? Number(r.lat) : null,
     lng: r.lng != null ? Number(r.lng) : null,
     asignado_at: r.asignado_at || null,
+    grupo_id: r.grupo_id || '',
+    grupo_nombre: r.grupo_nombre || '',
+    enviar_grupo: r.enviar_grupo != null ? Number(r.enviar_grupo) : 1,
     updated_at: r.updated_at
   };
 }
@@ -205,13 +218,16 @@ function upsertReporte(rp) {
   let asignadoAt = rp.asignado_at || null;
   if (!asignadoAt && existing && existing.asignado_at) asignadoAt = existing.asignado_at;
   if (!asignadoAt && rp.tecnico_id) asignadoAt = pushedAt;
+  const grupoId = String(rp.grupo_id || '').trim();
+  const grupoNombre = String(rp.grupo_nombre || '').trim();
+  const enviarGrupo = rp.enviar_grupo != null ? (rp.enviar_grupo ? 1 : 0) : 1;
   db.prepare(`
     INSERT INTO reportes (id, client_id, client_nombre, equipo_nombre, descripcion, fecha, estado, prioridad,
-      solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, grupo_id, grupo_nombre, enviar_grupo, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      client_id = excluded.client_id,
-      client_nombre = excluded.client_nombre,
+      client_id = COALESCE(reportes.client_id, excluded.client_id),
+      client_nombre = COALESCE(NULLIF(reportes.client_nombre, ''), NULLIF(excluded.client_nombre, '')),
       equipo_nombre = excluded.equipo_nombre,
       descripcion = excluded.descripcion,
       fecha = excluded.fecha,
@@ -226,13 +242,16 @@ function upsertReporte(rp) {
       adjuntos = excluded.adjuntos,
       lat = COALESCE(excluded.lat, reportes.lat),
       lng = COALESCE(excluded.lng, reportes.lng),
-      asignado_at = COALESCE(excluded.asignado_at, reportes.asignado_at),
+      asignado_at = COALESCE(NULLIF(excluded.asignado_at, ''), reportes.asignado_at),
+      grupo_id = COALESCE(NULLIF(excluded.grupo_id, ''), reportes.grupo_id),
+      grupo_nombre = COALESCE(NULLIF(excluded.grupo_nombre, ''), reportes.grupo_nombre),
+      enviar_grupo = excluded.enviar_grupo,
       updated_at = excluded.updated_at
   `).run(id, rp.client_id || null, rp.client_nombre || '', rp.equipo_nombre || '', String(rp.descripcion || ''),
     rp.fecha || '', rp.estado || 'abierto', rp.prioridad || 'normal', rp.solucion || '',
     rp.tecnico_id || null, rp.tecnico_nombre || '', rp.resuelto_at || '', rp.archivado ? 1 : 0, deleted, adjuntos,
     rp.lat != null ? Number(rp.lat) : null, rp.lng != null ? Number(rp.lng) : null,
-    asignadoAt, pushedAt);
+    asignadoAt, grupoId, grupoNombre, enviarGrupo, pushedAt);
   seq('reporte_upsert', id, '');
   return { applied: true, id };
 }
@@ -305,7 +324,8 @@ function addNota(reporteId, autor, texto) {
   return { id: notaId, reporte_id: reporteId, autor: autor || '', texto: String(texto || '').trim(), creado };
 }
 
-function setEstado(reporteId, estado, autor) {
+function setEstado(reporteId, estado, autor, opts) {
+  const o = opts || {};
   const ESTADOS = ['abierto', 'en_proceso', 'resuelto', 'espera_repuesto', 'espera_cliente'];
   if (!ESTADOS.includes(estado)) throw new Error('Estado no válido');
   const rp = db.prepare('SELECT id, estado, resuelto_at FROM reportes WHERE id = ? AND deleted = 0').get(reporteId);
@@ -313,12 +333,27 @@ function setEstado(reporteId, estado, autor) {
   let resueltoAt = rp.resuelto_at;
   const ahora = nowUTC();
   if (estado === 'resuelto') resueltoAt = rp.estado === 'resuelto' ? rp.resuelto_at : ahora;
+  const extra = { estado, autor: autor || '', creado: ahora };
+  if (o.solucion != null) {
+    const solucion = String(o.solucion || '').trim();
+    db.prepare('UPDATE reportes SET solucion = ?, updated_at = ? WHERE id = ?').run(solucion, ahora, reporteId);
+    extra.solucion = solucion;
+  }
+  if (o.enviar_grupo != null) {
+    const enviarGrupo = o.enviar_grupo ? 1 : 0;
+    db.prepare('UPDATE reportes SET enviar_grupo = ?, updated_at = ? WHERE id = ?').run(enviarGrupo, ahora, reporteId);
+    extra.enviar_grupo = enviarGrupo;
+  }
   db.prepare('UPDATE reportes SET estado = ?, resuelto_at = ?, updated_at = ? WHERE id = ?')
     .run(estado, resueltoAt, ahora, reporteId);
   db.prepare('INSERT INTO reporte_eventos (reporte_id, tipo, detalle, autor, creado) VALUES (?, ?, ?, ?, ?)')
     .run(reporteId, 'estado', JSON.stringify({ de: rp.estado, a: estado }), autor || '', ahora);
-  seq('estado', reporteId, JSON.stringify({ estado, autor: autor || '', creado: ahora }));
-  return { estado, resuelto_at: resueltoAt, updated_at: ahora };
+  seq('estado', reporteId, JSON.stringify(extra));
+  if (o.solucion != null || o.enviar_grupo != null) seq('reporte_upsert', reporteId, '');
+  const out = { estado, resuelto_at: resueltoAt, updated_at: ahora };
+  if (o.solucion != null) out.solucion = String(o.solucion || '').trim();
+  if (o.enviar_grupo != null) out.enviar_grupo = o.enviar_grupo ? 1 : 0;
+  return out;
 }
 
 function marcarBorrado(id, ts) {
@@ -341,10 +376,13 @@ function crearReporte(data) {
   const tecnicoId = Number(data.tecnico_id) || null;
   const tecnicoNombre = data.tecnico_nombre || '';
   const asignadoAt = tecnicoId ? ahora : null;
+  const grupoId = String(data.grupo_id || '').trim();
+  const grupoNombre = String(data.grupo_nombre || '').trim();
+  const enviarGrupo = data.enviar_grupo != null ? (data.enviar_grupo ? 1 : 0) : 1;
   db.prepare(`
     INSERT INTO reportes (id, client_id, client_nombre, equipo_nombre, descripcion, fecha, estado,
-      prioridad, solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'abierto', ?, '', ?, ?, NULL, 0, 0, '[]', ?, ?, ?, ?)
+      prioridad, solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, deleted, adjuntos, lat, lng, asignado_at, grupo_id, grupo_nombre, enviar_grupo, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'abierto', ?, '', ?, ?, NULL, 0, 0, '[]', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.client_id || null,
@@ -358,6 +396,9 @@ function crearReporte(data) {
     data.lat != null ? Number(data.lat) : null,
     data.lng != null ? Number(data.lng) : null,
     asignadoAt,
+    grupoId,
+    grupoNombre,
+    enviarGrupo,
     ahora
   );
   seq('reporte_upsert', id, '');
@@ -491,11 +532,36 @@ function getStats(tecnicoId) {
   };
 }
 
+const MAX_PUSH_TOKENS_POR_TECNICO = 3;
+const MAX_PUSH_TOKENS_SIN_TECNICO = 2;
+
 function registerPushToken(token, tecnicoId) {
   const ahora = nowUTC();
   try {
     db.prepare('INSERT OR REPLACE INTO push_tokens (token, tecnico_id, creado) VALUES (?, ?, ?)').run(token, tecnicoId || null, ahora);
+    trimPushTokens(tecnicoId);
   } catch (e) { /* noop */ }
+}
+
+function trimPushTokens(tecnicoId) {
+  const max = tecnicoId ? MAX_PUSH_TOKENS_POR_TECNICO : MAX_PUSH_TOKENS_SIN_TECNICO;
+  db.prepare(`DELETE FROM push_tokens WHERE tecnico_id IS ? AND token NOT IN (SELECT token FROM push_tokens WHERE tecnico_id IS ? ORDER BY creado DESC LIMIT ?)`).run(tecnicoId || null, tecnicoId || null, max);
+}
+
+function trimAllPushTokens() {
+  const tecs = db.prepare('SELECT DISTINCT tecnico_id AS t FROM push_tokens').all();
+  for (const r of tecs) trimPushTokens(r.t);
+  return db.prepare('SELECT COUNT(*) n FROM push_tokens').get().n;
+}
+
+function pruneOldPushTokens(maxAgeDays) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM push_tokens WHERE creado < ?').run(cutoff);
+  return trimAllPushTokens();
+}
+
+function removePushToken(token) {
+  try { db.prepare('DELETE FROM push_tokens WHERE token = ?').run(token); } catch (e) { /* noop */ }
 }
 
 function getPushTokens(tecnicoId) {
@@ -561,7 +627,7 @@ function getReportesAll() {
   return rows.map((r) => ({ ...reportePublico(r), fotos_count: Number(r.fotos_count || 0) }));
 }
 
-function asignarReporte(reporteId, tecnicoId, tecnicoNombre) {
+function asignarReporte(reporteId, tecnicoId, tecnicoNombre, autor) {
   const now = nowUTC();
   const existing = db.prepare('SELECT asignado_at FROM reportes WHERE id = ?').get(reporteId);
   const asignadoAt = (existing && existing.asignado_at) ? existing.asignado_at : (tecnicoId ? now : null);
@@ -569,7 +635,7 @@ function asignarReporte(reporteId, tecnicoId, tecnicoNombre) {
     .run(tecnicoId || null, tecnicoNombre || '', asignadoAt, now, reporteId);
   seq('reporte_upsert', reporteId, '');
   db.prepare('INSERT INTO reporte_eventos (reporte_id, tipo, detalle, autor, creado) VALUES (?, ?, ?, ?, ?)')
-    .run(reporteId, 'tecnico', 'Reasignado a ' + (tecnicoNombre || 'Sin asignar') + '.', 'Gerente', now);
+    .run(reporteId, 'tecnico', 'Reasignado a ' + (tecnicoNombre || 'Sin asignar') + '.', autor || 'Gerente', now);
   return reportePublico(db.prepare('SELECT * FROM reportes WHERE id = ?').get(reporteId));
 }
 
@@ -612,6 +678,7 @@ module.exports = {
   upsertReporte, upsertTecnico, addNota, setEstado, marcarBorrado,
   addFoto, deleteFoto, fotoPublico, fotosDeReporte, fotosCount,
   getHistorial, setUbicacion, getStats, registerPushToken, getPushTokens, getGerentePushTokens,
+  trimAllPushTokens, pruneOldPushTokens, removePushToken,
   crearReporte, getReportesParaRecordatorio, logReminder, cleanupOldReminders,
   getTecnicosList, getReportesAll, asignarReporte, getStatsGlobal, autoArchiveResolved
 };

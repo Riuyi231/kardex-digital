@@ -9,6 +9,27 @@
 <body>
   <div id="toasts"></div>
 
+  <!-- ===== UPDATE BAR ===== -->
+  <div id="update-bar" class="update-bar hidden">
+    <div class="update-bar-inner">
+      <div class="update-bar-info">
+        <span id="update-bar-icon" class="update-bar-icon">&#8635;</span>
+        <span id="update-bar-text">Buscando actualizaciones...</span>
+        <span id="update-bar-version" class="update-bar-version"></span>
+      </div>
+      <div id="update-bar-progress-wrap" class="update-bar-progress-wrap hidden">
+        <div class="update-bar-progress-track">
+          <div id="update-bar-progress-fill" class="update-bar-progress-fill" style="width:0%"></div>
+        </div>
+        <span id="update-bar-percent" class="update-bar-percent">0%</span>
+      </div>
+      <div id="update-bar-actions" class="update-bar-actions hidden">
+        <button id="update-bar-btn-install" class="btn btn-sm btn-primary">Instalar</button>
+        <button id="update-bar-btn-close" class="btn btn-sm btn-ghost">&times;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== LOGIN ===== -->
   <section id="login-view" class="login-view">
     <div class="login-card">
@@ -39,23 +60,26 @@
 
   <!-- ===== APP ===== -->
   <div id="app-view" class="app-view hidden">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <img class="logo-img" src="logo.png" alt="KARDEX Digital" />
-        <span>KARDEX Digital</span>
+        <span class="nav-label">KARDEX Digital</span>
       </div>
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-view="empleados">📋 Empleados</button>
-        <button class="nav-item" data-view="inactivos">🗂️ Inactivos</button>
-        <button class="nav-item hidden" data-view="nomina" id="nav-nomina">💰 Nómina</button>
-        <button class="nav-item hidden" data-view="reportes" id="nav-reportes">📑 Reportes</button>
-        <button class="nav-item hidden" data-view="notificaciones" id="nav-notificaciones">🔔 Alertas <span id="notif-badge" class="notif-badge hidden">0</span></button>
-        <button class="nav-item hidden" data-view="correo" id="nav-correo">✉️ Correos</button>
-        <button class="nav-item hidden" data-view="usuarios" id="nav-usuarios">👥 Usuarios</button>
-        <button class="nav-item hidden" data-view="audit" id="nav-audit">🛡️ Bitácora</button>
-        <button class="nav-item hidden" data-view="sistema" id="nav-sistema">⚙️ Sistema</button>
+        <button class="nav-item active" data-view="empleados" data-tooltip="Empleados"><span class="nav-icon">📋</span><span class="nav-label">Empleados</span></button>
+        <button class="nav-item" data-view="inactivos" data-tooltip="Inactivos"><span class="nav-icon">🗂️</span><span class="nav-label">Inactivos</span></button>
+        <button class="nav-item hidden" data-view="nomina" id="nav-nomina" data-tooltip="Nómina"><span class="nav-icon">💰</span><span class="nav-label">Nómina</span></button>
+        <button class="nav-item hidden" data-view="reportes" id="nav-reportes" data-tooltip="Reportes"><span class="nav-icon">📑</span><span class="nav-label">Reportes</span></button>
+        <button class="nav-item hidden" data-view="notificaciones" id="nav-notificaciones" data-tooltip="Alertas"><span class="nav-icon">🔔</span><span class="nav-label">Alertas</span> <span id="notif-badge" class="notif-badge hidden">0</span></button>
+        <button class="nav-item hidden" data-view="correo" id="nav-correo" data-tooltip="Correos"><span class="nav-icon">✉️</span><span class="nav-label">Correos</span></button>
+        <button class="nav-item hidden" data-view="usuarios" id="nav-usuarios" data-tooltip="Usuarios"><span class="nav-icon">👥</span><span class="nav-label">Usuarios</span></button>
+        <button class="nav-item hidden" data-view="audit" id="nav-audit" data-tooltip="Bitácora"><span class="nav-icon">🛡️</span><span class="nav-label">Bitácora</span></button>
+        <button class="nav-item hidden" data-view="sistema" id="nav-sistema" data-tooltip="Sistema"><span class="nav-icon">⚙️</span><span class="nav-label">Sistema</span></button>
       </nav>
       <div class="sidebar-footer">
+        <button class="sidebar-toggle" id="sidebar-toggle" title="Colapsar menú">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
         <div class="user-chip">
           <strong id="user-name">—</strong>
           <span id="user-role-badge" class="role-badge">—</span>
@@ -216,6 +240,30 @@
               <tbody id="incentivos-tbody"></tbody>
             </table>
           </div>
+          <div class="incentivos-box">
+            <div class="extra-card-head">
+              <strong>Deducciones manuales — <span id="ded-total" class="muted">RD$ 0.00</span></strong>
+              <span class="muted">Préstamos, adelantos u otros descuentos. Se restan del neto en nómina quincenal.</span>
+            </div>
+            <div class="vac-form">
+              <label>Quincena
+                <select id="ded-quincena">
+                  <option value="0">Todas</option>
+                  <option value="1">Primera</option>
+                  <option value="2">Segunda</option>
+                </select>
+              </label>
+              <label>Monto (RD$)
+                <input id="ded-monto" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <input id="ded-motivo" type="text" placeholder="Motivo (ej: préstamo, adelanto, descuento…) " style="flex:1;min-width:200px" />
+              <button class="btn btn-primary btn-sm" id="btn-ded-add">+ Agregar deducción</button>
+            </div>
+            <table class="table">
+              <thead><tr><th class="num">Monto</th><th>Quincena</th><th>Motivo</th><th></th></tr></thead>
+              <tbody id="deducciones-tbody"></tbody>
+            </table>
+          </div>
         </div>
         <div class="card extra-card hidden" id="vac-pago-card">
           <div class="extra-card-head">
@@ -273,6 +321,7 @@
                 <th class="num">Salario</th>
                 <th class="num">Meses en período</th>
                 <th class="num">Regalía</th>
+                <th>Cambios salario</th>
               </tr>
             </thead>
             <tbody id="regalia-tbody"></tbody>
@@ -865,6 +914,35 @@
         <div class="form-row" style="margin-top:10px">
           <label>Fecha de reintegro <input type="date" id="reintegrar-fecha" /></label>
         </div>
+        <div class="form-row" style="margin-top:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="reintegrar-mismo-puesto" checked />
+            El empleado regresa al mismo puesto y departamento
+          </label>
+        </div>
+        <div id="reintegrar-cambios" class="reintegrar-cambios hidden">
+          <p class="muted" style="margin-bottom:8px;font-size:12px">Indique los nuevos datos del empleado:</p>
+          <div class="form-row">
+            <label>Puesto <input type="text" id="reintegrar-puesto" placeholder="Puesto" /></label>
+          </div>
+          <div class="form-row">
+            <label>Departamento <input type="text" id="reintegrar-departamento" placeholder="Departamento" /></label>
+          </div>
+          <div class="form-row">
+            <label>Sucursal <input type="text" id="reintegrar-sucursal" placeholder="Sucursal" /></label>
+          </div>
+          <div class="form-row" style="display:flex;gap:10px">
+            <label style="flex:1">Tipo de salario
+              <select id="reintegrar-tipo-salario">
+                <option value="mensual">Mensual</option>
+                <option value="quincenal">Quincenal</option>
+                <option value="semanal">Semanal</option>
+                <option value="diario">Diario</option>
+              </select>
+            </label>
+            <label style="flex:1">Salario (RD$) <input type="number" id="reintegrar-salario" min="0" step="0.01" placeholder="0.00" /></label>
+          </div>
+        </div>
       </div>
       <footer class="modal-footer">
         <button class="btn btn-ghost" id="btn-reintegrar-cancel">Cancelar</button>
@@ -897,6 +975,13 @@
               <small>Usar la base central de la empresa por la red.</small>
             </div>
           </label>
+          <label class="mode-card" data-mode="cloud">
+            <input type="radio" name="conn-mode" value="cloud" />
+            <div>
+              <strong>☁️ Conectar a la nube</strong>
+              <small>Usar el servidor de Internet (base de datos y OCR de cédulas).</small>
+            </div>
+          </label>
           <label class="mode-card" data-mode="server">
             <input type="radio" name="conn-mode" value="server" />
             <div>
@@ -920,6 +1005,25 @@
           <label for="server-token">Token (si el servidor lo requiere)</label>
           <input id="server-token" type="text" placeholder="Pégalo desde el panel del servidor" spellcheck="false" />
           <div id="server-test-result" class="error-box hidden"></div>
+        </div>
+
+        <div id="conn-cloud" class="form-stack hidden">
+          <p class="muted" style="margin:2px 0 6px">Esta PC usará la <b>base central y el OCR</b> del servidor de Internet (ej. un VPS con <b>https://kardexdigital.duckdns.org</b>). No necesita ser servidor ni estar en la misma red.</p>
+          <label for="cloud-url">Dirección del servidor en Internet</label>
+          <input id="cloud-url" type="text" placeholder="https://kardexdigital.duckdns.org" spellcheck="false" />
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="btn btn-ghost" id="btn-cloud-test">🔌 Probar conexión</button>
+            <span id="cloud-saved-note" class="muted"></span>
+          </div>
+          <div id="cloud-test-result" class="error-box hidden"></div>
+
+          <label for="cloud-user" style="margin-top:12px">Usuario</label>
+          <input id="cloud-user" type="text" placeholder="admin" spellcheck="false" autocomplete="off" />
+          <label for="cloud-pass">Contraseña</label>
+          <input id="cloud-pass" type="password" placeholder="••••••••" autocomplete="off" />
+          <button type="button" class="btn btn-ghost" id="btn-cloud-login" style="margin-top:6px">🔑 Conectar y guardar acceso</button>
+          <div id="cloud-login-result" class="error-box hidden"></div>
+          <p class="muted" style="margin-top:8px">Al conectar, KARDEX guarda las credenciales, se conecta a la nube y reinicia la app.</p>
         </div>
 
         <div id="conn-server" class="form-stack hidden">
@@ -977,6 +1081,13 @@
             <div>
               <strong>🌐 Es un cliente</strong>
               <small>Conectarme a la base central de la empresa por la red.</small>
+            </div>
+          </label>
+          <label class="mode-card" data-mode="cloud">
+            <input type="radio" name="wizard-mode" value="cloud" />
+            <div>
+              <strong>☁️ Conectar a la nube</strong>
+              <small>Usar el servidor de Internet (base de datos y OCR).</small>
             </div>
           </label>
           <label class="mode-card" data-mode="local">

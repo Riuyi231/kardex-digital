@@ -224,6 +224,7 @@ function migrate() {
   const rpCols = tableColumns('reportes');
   if (!rpCols.includes('grupo_id')) STATE.db.run('ALTER TABLE reportes ADD COLUMN grupo_id TEXT');
   if (!rpCols.includes('grupo_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN grupo_nombre TEXT');
+  if (!rpCols.includes('enviar_grupo')) STATE.db.run('ALTER TABLE reportes ADD COLUMN enviar_grupo INTEGER DEFAULT 1');
   if (!rpCols.includes('tecnico_id')) STATE.db.run('ALTER TABLE reportes ADD COLUMN tecnico_id INTEGER');
   if (!rpCols.includes('tecnico_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN tecnico_nombre TEXT');
   if (!rpCols.includes('asignado_at')) STATE.db.run('ALTER TABLE reportes ADD COLUMN asignado_at TEXT');
@@ -239,6 +240,8 @@ function migrate() {
   if (!rpCols.includes('client_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN client_nombre TEXT');
   if (!rpCols.includes('equipo_nombre')) STATE.db.run('ALTER TABLE reportes ADD COLUMN equipo_nombre TEXT');
   if (!rpCols.includes('deleted')) STATE.db.run('ALTER TABLE reportes ADD COLUMN deleted INTEGER DEFAULT 0');
+  STATE.db.run("UPDATE reportes SET client_nombre = (SELECT nombre FROM clients WHERE id = reportes.client_id) WHERE (client_nombre IS NULL OR client_nombre = '') AND client_id IS NOT NULL");
+  STATE.db.run("UPDATE reportes SET equipo_nombre = (SELECT nombre FROM equipos WHERE id = reportes.equipo_id) WHERE (equipo_nombre IS NULL OR equipo_nombre = '') AND equipo_id IS NOT NULL");
   const tcCols = tableColumns('tecnicos');
   if (!tcCols.includes('sync_pass')) STATE.db.run('ALTER TABLE tecnicos ADD COLUMN sync_pass TEXT');
   if (!tcCols.includes('rol')) STATE.db.run("ALTER TABLE tecnicos ADD COLUMN rol TEXT DEFAULT 'tecnico'");

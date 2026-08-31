@@ -212,42 +212,41 @@ async function autoEnviarEsperaWhatsApp(reporteId) {
     if (whatsapp.snapshot().status !== 'ready') { dbg('[espera-wa] WhatsApp no conectado'); return; }
     const rp = db.get('SELECT * FROM reportes WHERE id = ?', [reporteId]);
     if (!rp) { dbg('[espera-wa] Reporte no encontrado: ' + reporteId); return; }
+    if (rp.enviar_grupo === 0) { dbg('[espera-wa] enviar_grupo=0, omitido: ' + reporteId); return; }
     const client = rp.client_id ? db.get('SELECT * FROM clients WHERE id = ?', [rp.client_id]) : null;
     const lastNote = db.get("SELECT detalle FROM reporte_eventos WHERE reporte_id = ? AND tipo = 'nota' ORDER BY id DESC LIMIT 1", [reporteId]);
     const msg = buildEsperaMsg(rp, client, lastNote ? lastNote.detalle : '');
     const chat = await whatsapp.findChat(grupoRef);
-    let lastAdj = [];
-    try { lastAdj = JSON.parse(rp.adjuntos || '[]'); } catch (e) { lastAdj = []; }
-    dbg('[espera-wa] adjuntos: ' + JSON.stringify(lastAdj));
-    const lastFotoNombre = lastAdj.length ? lastAdj[lastAdj.length - 1] : null;
-    dbg('[espera-wa] lastFoto: ' + lastFotoNombre);
-    if (lastFotoNombre && /^[A-Za-z0-9._@-]+$/.test(lastFotoNombre)) {
-      const dir = adjuntosDir();
-      const p = path.join(dir, lastFotoNombre);
-      dbg('[espera-wa] path: ' + p + ' exists: ' + fs.existsSync(p));
-      if (fs.existsSync(p)) {
-        const buf = fs.readFileSync(p);
-        dbg('[espera-wa] buf size: ' + buf.length + ' first bytes: ' + buf.slice(0, 10).toString('hex'));
-        const isJpeg = buf.length > 2 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
-        const isPng = buf.length > 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-        const isWebp = buf.length > 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
-        dbg('[espera-wa] isJpeg: ' + isJpeg + ' isPng: ' + isPng + ' isWebp: ' + isWebp);
-        if ((isJpeg || isPng || isWebp) && buf.length > 100) {
-          const ext = path.extname(lastFotoNombre).toLowerCase();
-          const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-          dbg('[espera-wa] Enviando imagen mime: ' + mime);
-          await whatsapp.sendMediaTo(chat.id, { tipo: 'imagen', buffer: buf, caption: msg, mime });
-          addReporteEvent(reporteId, 'enviado', 'Notificación de espera enviada al grupo ' + chat.name + ' (con foto).');
-          sendToRenderer('app:changed');
-          return;
-        } else {
-          dbg('[espera-wa] Imagen corrupta, bufLen=' + buf.length + ' enviando solo texto');
-        }
+    let adj = [];
+    try { adj = JSON.parse(rp.adjuntos || '[]'); } catch (e) { adj = []; }
+    dbg('[espera-wa] adjuntos: ' + JSON.stringify(adj));
+    const dir = adjuntosDir();
+    const bufs = [];
+    for (const nombre of adj) {
+      if (!/^[A-Za-z0-9._@-]+$/.test(nombre)) continue;
+      const p = path.join(dir, nombre);
+      if (!fs.existsSync(p)) continue;
+      const buf = fs.readFileSync(p);
+      const isJpeg = buf.length > 2 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+      const isPng = buf.length > 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+      const isWebp = buf.length > 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
+      if ((isJpeg || isPng || isWebp) && buf.length > 100) {
+        const ext = path.extname(nombre).toLowerCase();
+        bufs.push({ nombre, mime: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg', buffer: buf });
       } else {
-        dbg('[espera-wa] Archivo no existe en disco');
+        dbg('[espera-wa] Imagen corrupta o no imagen, omitida: ' + nombre + ' bufLen=' + buf.length);
       }
-    } else {
-      dbg('[espera-wa] No hay foto adjunta en el reporte');
+    }
+    if (bufs.length) {
+      dbg('[espera-wa] Enviando ' + bufs.length + ' imagenes');
+      for (let i = 0; i < bufs.length; i++) {
+        const caption = i === 0 ? msg : '';
+        await whatsapp.sendMediaTo(chat.id, { tipo: 'imagen', buffer: bufs[i].buffer, caption, mime: bufs[i].mime });
+      }
+      await whatsapp.sendMessageTo(chat.id, msg);
+      addReporteEvent(reporteId, 'enviado', 'Notificación de espera enviada al grupo ' + chat.name + ' (' + bufs.length + ' fotos).');
+      sendToRenderer('app:changed');
+      return;
     }
     await whatsapp.sendMessageTo(chat.id, msg);
     addReporteEvent(reporteId, 'enviado', 'Notificación de espera enviada al grupo ' + chat.name + '.');
@@ -256,6 +255,35 @@ async function autoEnviarEsperaWhatsApp(reporteId) {
 }
 
 global.onEsperaDetectado = autoEnviarEsperaWhatsApp;
+
+function buildAsignadoMsg(rp) {
+  const cliente = rp.client_nombre || 'Cliente';
+  const equipo = rp.equipo_nombre || '';
+  const tecnico = rp.tecnico_nombre || 'Sin asignar';
+  const desc = rp.descripcion || '';
+  return '👷 *ASIGNACIÓN DE TÉCNICO*\n'
+    + '*Cliente:* ' + cliente + '\n'
+    + '*Reporte:* #' + rp.id + '\n'
+    + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+    + '*Problema:* ' + desc.slice(0, 120) + (desc.length > 120 ? '...' : '') + '\n'
+    + '*Técnico asignado:* ' + tecnico + '\n'
+    + '— ' + ((db.get('SELECT val FROM settings WHERE key = ?', ['negocio']) || {}).val || 'NexAlert');
+}
+
+async function autoEnviarAsignadoWhatsApp(reporteId) {
+  try {
+    if (whatsapp.snapshot().status !== 'ready') { dbg('[asig-wa] WhatsApp no conectado'); return; }
+    const rp = db.get('SELECT * FROM reportes WHERE id = ?', [reporteId]);
+    if (!rp) { dbg('[asig-wa] Reporte no encontrado: ' + reporteId); return; }
+    if (!rp.grupo_id && !rp.grupo_nombre) { dbg('[asig-wa] Sin grupo asignado, omitido: ' + reporteId); return; }
+    const msg = buildAsignadoMsg(rp);
+    const sentTo = await whatsapp.sendToGroup(rp.grupo_id || rp.grupo_nombre, msg);
+    addReporteEvent(reporteId, 'enviado', 'Notificación de asignación enviada al grupo ' + sentTo + '.');
+    sendToRenderer('app:changed');
+  } catch (e) { dbg('[asig-wa] Error: ' + e.message); }
+}
+
+global.onAsignadoDetectado = autoEnviarAsignadoWhatsApp;
 
 function sendToRenderer(channel, data) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
@@ -1131,6 +1159,7 @@ function registerIpc() {
         [t.id, t.nombre, db.nowDateTime(), id]);
       bumpReporte(id);
       addReporteEvent(id, 'tecnico', 'Asignado a ' + t.nombre + '.');
+      setTimeout(() => autoEnviarAsignadoWhatsApp(id), 300);
     } else {
       db.run('UPDATE reportes SET tecnico_id = NULL, tecnico_nombre = NULL, asignado_at = NULL WHERE id = ?', [id]);
       bumpReporte(id);
@@ -1145,17 +1174,7 @@ function registerIpc() {
       if (!rp) return { ok: false, error: 'Reporte no encontrado' };
       if (state.wa.status !== 'ready') return { ok: false, error: 'WhatsApp no conectado' };
       if (!rp.grupo_id && !rp.grupo_nombre) return { ok: false, error: 'Sin grupo asignado' };
-      const cliente = rp.client_nombre || 'Cliente';
-      const equipo = rp.equipo_nombre || '';
-      const tecnico = rp.tecnico_nombre || 'Sin asignar';
-      const desc = rp.descripcion || '';
-      const msg = '👷 *ASIGNACIÓN DE TÉCNICO*\n'
-        + '*Cliente:* ' + cliente + '\n'
-        + '*Reporte:* #' + rp.id + '\n'
-        + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
-        + '*Problema:* ' + desc.slice(0, 120) + (desc.length > 120 ? '...' : '') + '\n'
-        + '*Técnico asignado:* ' + tecnico + '\n'
-        + '— ' + (db.get('SELECT val FROM settings WHERE key = ?', ['negocio']) || {}).val || 'NexAlert';
+      const msg = buildAsignadoMsg(rp);
       const sentTo = await whatsapp.sendToGroup(rp.grupo_id || rp.grupo_nombre, msg);
       addReporteEvent(id, 'enviado', 'Notificación de asignación enviada al grupo ' + sentTo + '.');
       return { ok: true, data: { sentTo, message: msg } };

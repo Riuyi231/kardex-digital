@@ -11,6 +11,8 @@ const NS_METHODS = {
   horasExtra: ['get', 'listForPeriod', 'save'],
   liquidaciones: ['listForEmployee', 'listAll', 'save', 'delete'],
   incentivos: ['listForPeriod', 'list', 'create', 'update', 'delete'],
+  deduccionesManuales: ['listForPeriod', 'listForEmployee', 'create', 'update', 'delete'],
+  salarioHistorial: ['listForEmployee', 'record', 'getSalarioPromedio'],
   pagoVacaciones: ['get', 'listForPeriod', 'totalDiasPagados', 'save', 'delete'],
   vacaciones: ['list', 'create', 'delete'],
   reportes: ['plantilla', 'antiguedad', 'cumpleanos', 'departamentos'],

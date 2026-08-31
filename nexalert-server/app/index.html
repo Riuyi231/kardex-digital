@@ -22,6 +22,9 @@
   </div>
   <div class="top-actions">
     <span id="badge-pendientes" class="badge-pend hidden">0</span>
+    <button id="btn-monitoreo-top" class="icon-btn btn-monitoreo-top hidden" title="Monitoreo" aria-label="Monitoreo">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+    </button>
     <button id="btn-nuevo" class="icon-btn btn-nuevo-rp" title="Nuevo reporte" aria-label="Nuevo reporte">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
     </button>
@@ -30,6 +33,8 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5" fill="currentColor"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor"></circle><circle cx="12" cy="19" r="1.5" fill="currentColor"></circle></svg>
       </button>
       <div id="top-dropdown" class="top-dropdown hidden">
+        <button id="btn-monitoreo" class="dd-item hidden">Monitoreo</button>
+        <button id="btn-archivados" class="dd-item">Archivados</button>
         <button id="btn-stats" class="dd-item">Estadisticas</button>
         <button id="btn-refresh" class="dd-item">Actualizar</button>
         <button id="btn-theme" class="dd-item">Tema</button>
@@ -41,11 +46,12 @@
 
 <main id="view" class="hidden">
   <section id="home">
-    <div class="home-head">
+<div class="home-head">
       <div>
         <h1>Mis reportes</h1>
         <p id="ultimo-update" class="hint"></p>
       </div>
+      <button id="btn-arch-home" class="btn-sm btn-outline" type="button">Archivados</button>
     </div>
     <div id="filtro">
       <input id="buscar" type="search" placeholder="Buscar cliente, equipo o problema">
@@ -101,6 +107,12 @@
             <option value="urgente">Urgente</option>
           </select>
         </label>
+        <label class="form-field hidden" id="nf-tecnico-wrap">
+          <span class="form-label">Asignar a</span>
+          <select id="nf-tecnico">
+            <option value="">Sin asignar</option>
+          </select>
+        </label>
         <div class="form-actions">
           <button type="submit" id="nf-submit" class="btn-primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Guardar reporte</button>
         </div>
@@ -117,6 +129,10 @@
   </section>
 
   <section id="dashboard-section" class="hidden"></section>
+
+  <section id="archivados-section" class="hidden"></section>
+
+  <section id="monitoreo-section" class="hidden"></section>
 </main>
 
 <div id="login">
@@ -136,6 +152,10 @@
       </label>
       <p id="login-error" class="error hidden"></p>
       <button type="submit" id="btn-login" class="btn-primary">Entrar</button>
+      <button type="button" id="btn-biometric" class="btn-bio hidden">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 10v4M7.5 7.5a5 5 0 0 0 7.07.07l-7.07 7.07A5 5 0 0 0 7.5 7.5z"/><path d="M18.5 10.5a5 5 0 0 1-4.93 5.93l4.93-4.93"/><circle cx="12" cy="14" r="1"/></svg>
+        Entrar con biometria
+      </button>
     </form>
   </div>
 </div>
@@ -152,7 +172,7 @@
 </div>
 
 <input type="file" id="in-foto-cam" accept="image/*" capture="environment" hidden>
-<input type="file" id="in-foto-gal" accept="image/*" hidden>
+<input type="file" id="in-foto-gal" accept="image/*" multiple hidden>
 
 <div id="foto-overlay" class="hidden">
   <img id="foto-overlay-img" alt="Foto">
@@ -164,25 +184,69 @@
 <div id="espera-modal" class="hidden">
   <div class="modal-card espera-card">
     <h2 id="espera-titulo">Espera de repuesto</h2>
-    <p class="espera-hint">Describe la pieza que se necesita o el motivo de la espera.</p>
-    <textarea id="esp-nota" rows="3" placeholder="Ej: Falta bombillo LED 15W..."></textarea>
-    <div class="esp-foto-section">
-      <div class="esp-foto-btns">
-        <button id="esp-foto-cam" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Foto</button>
-        <button id="esp-foto-gal" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Galeria</button>
+    <div id="espera-sub" class="hidden">
+      <p class="espera-hint">Tipo de espera:</p>
+      <div class="espera-sub-btns">
+        <button id="esp-sub-repuesto" class="btn-sm btn-primary">Espera repuesto</button>
+        <button id="esp-sub-cliente" class="btn-sm btn-primary">Espera cliente</button>
       </div>
-      <img id="esp-foto-preview" class="esp-foto-preview hidden" alt="preview">
-      <span id="esp-foto-nombre" class="form-hint"></span>
+      <div class="modal-actions">
+        <button id="esp-cancel-sub" class="btn-ghost">Cancelar</button>
+      </div>
     </div>
+    <div id="espera-form" class="hidden">
+      <p class="espera-hint" id="espera-hint-text">Describe la pieza que se necesita o el motivo de la espera.</p>
+      <textarea id="esp-nota" rows="3" placeholder="Ej: Falta bombillo LED 15W..."></textarea>
+<div class="esp-foto-section">
+        <div class="esp-foto-btns">
+          <button id="esp-foto-cam" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Foto</button>
+          <button id="esp-foto-gal" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Galeria</button>
+        </div>
+        <div id="esp-foto-list" class="esp-foto-list"></div>
+        <label class="esp-grupo-chk"><input type="checkbox" id="esp-enviar-grupo" checked> Enviar aviso al grupo de WhatsApp</label>
+      </div>
+      <div class="modal-actions">
+        <button id="esp-cancel" class="btn-ghost">Cancelar</button>
+        <button id="esp-submit" class="btn-primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="resolver-modal" class="hidden">
+  <div class="modal-card espera-card">
+    <h2 id="resolver-titulo">Resuelto</h2>
+    <div class="espera-hint">Describe la solucion aplicada o lo que hiciste para resolver el problema.</div>
+    <textarea id="resolver-nota" rows="3" placeholder="Ej: Se reemplazo el bombillo LED 15W..."></textarea>
     <div class="modal-actions">
-      <button id="esp-cancel" class="btn-ghost">Cancelar</button>
-      <button id="esp-submit" class="btn-primary">Confirmar</button>
+      <button id="resolver-cancel" class="btn-ghost">Cancelar</button>
+      <button id="resolver-submit" class="btn-primary">Confirmar</button>
     </div>
   </div>
 </div>
 
 <div id="toast" class="hidden"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=1.5.16"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

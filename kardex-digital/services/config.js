@@ -28,11 +28,16 @@ function parseCli() {
 
 // Carga la configuración combinando archivo, variables de entorno y CLI.
 function load(configPath) {
-  const cfg = { serverUrl: null, token: '', serverPort: DEFAULT_PORT, serverName: DEFAULT_NAME, isServer: false, serverMode: 'local', wizardDone: false, configPath: configPath || null };
+  const cfg = { serverUrl: null, token: '', serverPort: DEFAULT_PORT, serverName: DEFAULT_NAME, isServer: false, serverMode: 'local', wizardDone: false, configPath: configPath || null, cloud: {} };
   if (configPath && fs.existsSync(configPath)) {
     try {
       const j = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
       if (j && typeof j.wizardDone === 'boolean') cfg.wizardDone = j.wizardDone;
+      if (j && j.cloud) {
+        if (typeof j.cloud.url === 'string' && j.cloud.url.trim()) cfg.cloud.url = j.cloud.url.trim().replace(/\/+$/, '');
+        if (typeof j.cloud.token === 'string') cfg.cloud.token = j.cloud.token;
+        if (typeof j.cloud.enabled === 'boolean') cfg.cloud.enabled = j.cloud.enabled;
+      }
       if (j && j.server) {
         if (typeof j.server.url === 'string' && j.server.url.trim()) {
           cfg.serverUrl = j.server.url.trim().replace(/\/+$/, '');
@@ -75,6 +80,12 @@ function save(configPath, server) {
   if (server.port !== undefined) existing.server.port = Number(server.port);
   if (server.name !== undefined) existing.server.name = server.name;
   if (server.mode !== undefined) existing.server.mode = server.mode;
+  if (server.cloud !== undefined) {
+    existing.cloud = existing.cloud || {};
+    if (server.cloud.url !== undefined) existing.cloud.url = server.cloud.url;
+    if (server.cloud.token !== undefined) existing.cloud.token = server.cloud.token;
+    if (server.cloud.enabled !== undefined) existing.cloud.enabled = server.cloud.enabled;
+  }
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2));
   return existing.server;

@@ -103,6 +103,10 @@
     $('login-view').classList.add('hidden');
     $('app-view').classList.remove('hidden');
     $('user-name').textContent = currentUser.full_name || currentUser.username;
+    const uname = currentUser.full_name || currentUser.username || '';
+    const uparts = uname.trim().split(/\s+/);
+    const initials = uparts.length >= 2 ? uparts[0][0] + uparts[uparts.length - 1][0] : (uparts[0] || '')[0] || '';
+    $('user-name').setAttribute('data-initials', initials.toUpperCase());
     const rb = $('user-role-badge');
     rb.textContent = roleLabel(currentUser.role);
     rb.className = 'role-badge ' + roleClass(currentUser.role);
@@ -129,6 +133,23 @@
       const res = await window.api.getServerConfig();
       if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
       const cfg = res.data;
+      if (cfg.cloud && cfg.cloud.enabled && cfg.cloud.url) {
+        el.textContent = 'Verificando la nube: ' + cfg.cloud.url + '…';
+        el.className = 'conn-status';
+        try {
+          const t = await window.api.testCloud(cfg.cloud.url);
+          if (t && t.ok) {
+            el.textContent = '☁️ Conectado a la nube: ' + cfg.cloud.url;
+            el.className = 'conn-status ok';
+          } else {
+            throw new Error(t && t.error ? t.error : 'sin respuesta');
+          }
+        } catch (e2) {
+          el.textContent = 'Nube no alcanzable: ' + (e2 && e2.message ? e2.message : 'error');
+          el.className = 'conn-status err';
+        }
+        return;
+      }
       if (!cfg.url) {
         el.textContent = 'Base de datos local de esta PC';
         el.className = 'conn-status';
@@ -170,6 +191,7 @@
     });
     $('conn-client').classList.toggle('hidden', mode !== 'client');
     $('conn-server').classList.toggle('hidden', mode !== 'server');
+    $('conn-cloud').classList.toggle('hidden', mode !== 'cloud');
     $('btn-server-test').classList.toggle('hidden', mode !== 'client');
     const box = $('server-test-result');
     box.className = 'error-box hidden';
@@ -177,6 +199,10 @@
     $('discover-results').innerHTML = '';
     if (mode === 'server' && !$('server-token-gen').value.trim()) {
       $('server-token-gen').value = randomToken();
+    }
+    if (mode === 'cloud') {
+      const saved = connCfg && connCfg.cloud && connCfg.cloud.token;
+      $('cloud-saved-note').textContent = saved ? '✓ Acceso guardado para esta dirección. Puedes reconectar.' : '';
     }
   }
 
@@ -219,7 +245,8 @@
         $('server-name-gen').value = c.serverName || 'kardex';
         $('lan-port-hint').textContent = c.serverPort || 18006;
         $('server-token-gen').value = c.token || '';
-        const mode = (c.mode && ['local', 'client', 'server'].includes(c.mode)) ? c.mode : 'local';
+        $('cloud-url').value = (c.cloud && c.cloud.url) || '';
+        const mode = (c.mode && ['local', 'client', 'server', 'cloud'].includes(c.mode)) ? c.mode : 'local';
         setConnMode(mode);
         $('server-lan-ips').innerHTML = (c.lanIps && c.lanIps.length
           ? c.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (c.serverPort || 18006) + '</span>').join('')
@@ -330,9 +357,69 @@
     }
   }
 
+  async function testCloudConnection() {
+    const box = $('cloud-test-result');
+    box.className = 'error-box';
+    box.classList.remove('hidden');
+    box.textContent = 'Probando…';
+    try {
+      const res = await window.api.testCloud($('cloud-url').value);
+      if (res && res.ok) {
+        box.textContent = 'Conexión exitosa. El servidor en la nube está disponible.';
+        box.className = 'error-box success';
+      } else {
+        throw new Error(res && res.error ? res.error : 'sin respuesta');
+      }
+    } catch (e) {
+      box.textContent = (e && e.message) || 'No se pudo conectar';
+      box.className = 'error-box';
+    }
+  }
+
+  async function connectCloud() {
+    const box = $('cloud-login-result');
+    box.className = 'error-box';
+    box.classList.remove('hidden');
+    box.textContent = 'Conectando…';
+    const url = $('cloud-url').value.trim().replace(/\/+$/, '');
+    const user = $('cloud-user').value.trim();
+    const pass = $('cloud-pass').value;
+    try {
+      if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardexdigital.duckdns.org)');
+      if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
+      if (!user || !pass) throw new Error('Escribe el usuario y la contraseña');
+      // Primero se guarda la URL para que el login la use; luego se autentica y
+      // se guarda el token JWT. Al final se reinicia conectado a la nube.
+      const saved = await window.api.setCloud({ url });
+      if (!saved || !saved.ok) throw new Error(saved && saved.error ? saved.error : 'Error guardando la dirección');
+      const res = await window.api.cloudLogin(user, pass);
+      if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error de autenticación');
+      const who = ((res.user && (res.user.full_name || res.user.username)) || '');
+      box.textContent = '✓ Conectado a la nube' + (who ? ' como ' + who : '') + '. Reiniciando…';
+      box.className = 'error-box success';
+      setTimeout(() => window.api.restartApp(), 1200);
+    } catch (e) {
+      box.textContent = (e && e.message) || 'No se pudo conectar a la nube';
+      box.className = 'error-box';
+    }
+  }
+
   async function saveServerConfig() {
     const mode = connMode;
     try {
+      if (mode === 'cloud') {
+        const url = $('cloud-url').value.trim().replace(/\/+$/, '');
+        if (!url) throw new Error('Escribe la dirección del servidor (ej. https://kardexdigital.duckdns.org)');
+        if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
+        const savedTok = !!(connCfg && connCfg.cloud && connCfg.cloud.token);
+        const tokMatches = !!(connCfg && connCfg.cloud && connCfg.cloud.url === url);
+        if (!savedTok || !tokMatches) {
+          throw new Error('Pulsa "Conectar y guardar acceso" con el usuario y contraseña antes de aplicar');
+        }
+        toast('Conectando a la nube. Reiniciando…', 'info', 1500);
+        setTimeout(() => window.api.restartApp(), 1200);
+        return;
+      }
       if (mode === 'client') {
         const url = $('server-url').value.trim().replace(/\/+$/, '');
         if (!url) throw new Error('Escribe la dirección del servidor (ej. http://192.168.1.50:18006)');
@@ -417,6 +504,7 @@
         $('server-port').value = res.data.serverPort || 18006;
         $('server-name-gen').value = res.data.serverName || 'kardex';
         $('lan-port-hint').textContent = res.data.serverPort || 18006;
+        $('cloud-url').value = (res.data.cloud && res.data.cloud.url) || '';
         $('server-lan-ips').innerHTML = (res.data.lanIps && res.data.lanIps.length
           ? res.data.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (res.data.serverPort || 18006) + '</span>').join('')
           : '<span>No se detectaron IPs de red en esta PC</span>');
@@ -425,6 +513,7 @@
     setConnMode(wizardMode);
     $('server-modal').classList.remove('hidden');
     if (wizardMode === 'client') $('server-url').focus();
+    if (wizardMode === 'cloud') $('cloud-url').focus();
   }
 
   /* ============ Licencia ============ */
@@ -841,21 +930,43 @@
 
   /* ============ Reintegración ============ */
   let reintegrarEmpId = null;
-  function showReintegrar(empId) {
+  async function showReintegrar(empId) {
     reintegrarEmpId = empId;
     const hoy = new Date();
     $('reintegrar-fecha').value = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    $('reintegrar-mismo-puesto').checked = true;
+    $('reintegrar-cambios').classList.add('hidden');
+    try {
+      const er = await window.api.getEmployee(empId);
+      if (er.ok && er.data) {
+        $('reintegrar-puesto').value = er.data.puesto || '';
+        $('reintegrar-departamento').value = er.data.departamento || '';
+        $('reintegrar-sucursal').value = er.data.sucursal || '';
+        $('reintegrar-tipo-salario').value = er.data.tipo_salario || 'mensual';
+        $('reintegrar-salario').value = er.data.salario || '';
+      }
+    } catch (e) { /* ignore */ }
     $('reintegrar-modal').classList.remove('hidden');
   }
 
   async function confirmReintegrar() {
     if (!reintegrarEmpId) return;
     const fecha = $('reintegrar-fecha').value;
-    if (!fecha) { toast('Indique la fecha de reintegro', 'error'); return; }
+    if (!fecha) { toast('Indique la fecha de reintegro', 'error'); return;
+    }
+    const mismoPuesto = $('reintegrar-mismo-puesto').checked;
+    const extra = { fecha_ingreso: isoToDMY(fecha) };
+    if (!mismoPuesto) {
+      extra.puesto = $('reintegrar-puesto').value.trim();
+      extra.departamento = $('reintegrar-departamento').value.trim();
+      extra.sucursal = $('reintegrar-sucursal').value.trim();
+      extra.tipo_salario = $('reintegrar-tipo-salario').value;
+      extra.salario = Number($('reintegrar-salario').value) || 0;
+    }
     try {
-      const r = await window.api.setEmployeeStatus(reintegrarEmpId, 'activo', { fecha_ingreso: isoToDMY(fecha) });
+      const r = await window.api.setEmployeeStatus(reintegrarEmpId, 'activo', extra);
       if (!r.ok) throw new Error(r.error);
-      toast('Empleado reintegrado con nueva fecha de ingreso', 'success');
+      toast(mismoPuesto ? 'Empleado reintegrado con nueva fecha de ingreso' : 'Empleado reintegrado con nuevos datos', 'success');
       closeReintegrar();
       refreshEmployeeLists();
     } catch (e) { toast(e.message, 'error'); }
@@ -1043,6 +1154,7 @@
         }
       } catch (e) { /* sin extras guardadas */ }
       await renderIncentivos(empId, mes, anio);
+      await renderDeducciones(empId, mes, anio);
       await renderPagoVacaciones(empId, mes, anio);
     }
     await renderNominaVista($('nomina-vista').value, mes, anio, empId, depto);
@@ -1100,11 +1212,12 @@
     quincenal: {
       label: 'Quincenal',
       fetch: (mes, anio, empId, depto) => window.api.calcularNominaQuincenal(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', '1ra quincena', '2da quincena (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones RD$', '1ra quincena', '2da quincena (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
         C('money', r.salario), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
         C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
+        C('money', r.deducciones_manuales),
         C('money', r.quincena1), C('money', r.quincena2_bruto),
         C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
         C('money', r.quincena2_neto), C('money', r.total_neto, true)
@@ -1113,6 +1226,7 @@
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
         C('money', t.salario), C('texto', ''), C('texto', ''), C('texto', ''),
         C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
+        C('money', t.deducciones_manuales),
         C('money', t.quincena1), C('money', t.quincena2_bruto),
         C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
         C('money', t.quincena2_neto), C('money', t.neto, true)
@@ -1124,6 +1238,7 @@
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
+        ['Deducciones manuales', fmtRD(t.deducciones_manuales), ''],
         ['1ra quincena', fmtRD(t.quincena1), ''],
         ['2da quincena (bruto)', fmtRD(t.quincena2_bruto), ''],
         ['Total retenciones', fmtRD(t.retenciones), ''],
@@ -1301,6 +1416,61 @@
       $('inc-monto').value = '';
       $('inc-motivo').value = '';
       renderIncentivos(empId, mes, anio);
+      loadNomina();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function renderDeducciones(empId, mes, anio) {
+    const tb = $('deducciones-tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    $('ded-total').textContent = 'RD$ 0.00';
+    if (!empId) return;
+    try {
+      const res = await window.api.listDeducciones(empId, mes, anio);
+      if (!res.ok) throw new Error(res.error);
+      const list = res.data || [];
+      let total = 0;
+      tb.innerHTML = list.length ? list.map(d => {
+        total += Number(d.monto) || 0;
+        const qLabel = d.quincena === 1 ? '1ra' : d.quincena === 2 ? '2da' : 'Todas';
+        return `<tr>
+          <td class="num">${fmtRD(d.monto)}</td>
+          <td>${qLabel}</td>
+          <td>${esc(d.motivo || '')}</td>
+          <td class="row-actions"><button class="btn btn-ghost btn-sm" title="Eliminar" data-ded-del="${d.id}">✕</button></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="4" class="muted center">Sin deducciones registradas en este período.</td></tr>';
+      $('ded-total').textContent = fmtRD(total);
+      tb.querySelectorAll('[data-ded-del]').forEach(b => b.addEventListener('click', async () => {
+        try {
+          const r = await window.api.deleteDeduccion(Number(b.dataset.dedDel));
+          if (!r.ok) throw new Error(r.error);
+          toast('Deducción eliminada', 'success');
+          renderDeducciones(empId, mes, anio);
+          loadNomina();
+        } catch (e) { toast(e.message, 'error'); }
+      }));
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function addDeduccion() {
+    const empId = Number($('nomina-emp').value);
+    if (!empId) { toast('Seleccione un empleado', 'error'); return; }
+    const mes = Number($('nomina-mes').value) || new Date().getMonth() + 1;
+    const anio = Number($('nomina-anio').value) || new Date().getFullYear();
+    const monto = Number($('ded-monto').value);
+    const motivo = $('ded-motivo').value.trim();
+    const quincena = Number($('ded-quincena').value) || 0;
+    if (!(monto > 0)) { toast('Ingrese un monto mayor que 0', 'error'); return; }
+    if (!motivo) { toast('Indique el motivo de la deducción', 'error'); return; }
+    try {
+      const res = await window.api.createDeduccion({ employee_id: empId, mes, anio, quincena, monto, motivo });
+      if (!res.ok) throw new Error(res.error);
+      toast('Deducción agregada', 'success');
+      $('ded-monto').value = '';
+      $('ded-motivo').value = '';
+      renderDeducciones(empId, mes, anio);
       loadNomina();
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -1542,7 +1712,17 @@
       const data = res.data;
       lastRegalia = data;
       $('regalia-period').textContent = data.periodo;
-      $('regalia-tbody').innerHTML = data.rows.length ? data.rows.map(r => `
+      $('regalia-tbody').innerHTML = data.rows.length ? data.rows.map(r => {
+        let cambiosHtml = '';
+        if (r.cambios && r.cambios.length) {
+          cambiosHtml = r.cambios.map(c => {
+            const f = c.fecha ? new Date(c.fecha).toLocaleDateString('es-DO') : '—';
+            return `<div class="salario-cambio"><span class="cambio-fecha">${f}</span>: ${fmtRD(c.anterior)} → ${fmtRD(c.nuevo)}${c.motivo ? ' <span class="cambio-motivo">(' + esc(c.motivo) + ')</span>' : ''}</div>`;
+          }).join('');
+        } else {
+          cambiosHtml = '<span class="muted">—</span>';
+        }
+        return `
         <tr>
           <td><strong>${esc(r.nombres)} ${esc(r.apellidos)}</strong></td>
           <td>${esc(r.cedula || '—')}</td>
@@ -1551,8 +1731,10 @@
           <td class="num">${fmtRD(r.salario)}</td>
           <td class="num">${(Number(r.meses) || 0).toLocaleString('es-DO', { maximumFractionDigits: 2 })}</td>
           <td class="num"><strong>${fmtRD(r.regalia)}</strong></td>
-        </tr>`).join('')
-        : '<tr><td colspan="7" class="muted center">Sin empleados con salario cargado.</td></tr>';
+          <td>${cambiosHtml}</td>
+        </tr>`;
+      }).join('')
+        : '<tr><td colspan="8" class="muted center">Sin empleados con salario cargado.</td></tr>';
       $('regalia-total').textContent = fmtRD(data.total);
       $('nomina-table-card').classList.add('hidden');
       $('regalia-card').classList.remove('hidden');
@@ -1568,9 +1750,15 @@
     }
     return doExportExcel(`regalia_${lastRegalia.anio}`, [{
       name: 'Regalía pascual',
-      headers: ['Empleado', 'Cedula', 'Puesto', 'Departamento', 'Salario', 'Meses', 'Regalia'],
-      rows: lastRegalia.rows.map(r => [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.meses, r.regalia]),
-      footer: ['TOTALES', '', '', '', '', '', lastRegalia.total]
+      headers: ['Empleado', 'Cédula', 'Puesto', 'Departamento', 'Salario', 'Meses', 'Regalía', 'Cambios salario'],
+      rows: lastRegalia.rows.map(r => {
+        const cambiosStr = (r.cambios || []).map(c => {
+          const f = c.fecha ? new Date(c.fecha).toLocaleDateString('es-DO') : '';
+          return f + ': ' + fmtRD(c.anterior) + ' → ' + fmtRD(c.nuevo) + (c.motivo ? ' (' + c.motivo + ')' : '');
+        }).join('; ');
+        return [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.meses, r.regalia, cambiosStr];
+      }),
+      footer: ['TOTALES', '', '', '', '', '', lastRegalia.total, '']
     }]);
   }
 
@@ -2797,6 +2985,10 @@
     $('btn-server-cancel').addEventListener('click', closeServerConfig);
     $('server-modal').addEventListener('click', (e) => { if (e.target === $('server-modal')) closeServerConfig(); });
     $('btn-server-test').addEventListener('click', testServerConnection);
+    $('btn-cloud-test').addEventListener('click', testCloudConnection);
+    $('btn-cloud-login').addEventListener('click', connectCloud);
+    ['cloud-url', 'cloud-user', 'cloud-pass'].forEach((id) =>
+      $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') connectCloud(); }));
     $('btn-server-save').addEventListener('click', saveServerConfig);
     $('btn-discover').addEventListener('click', discoverServers);
     $('btn-connect-name').addEventListener('click', connectByName);
@@ -2834,6 +3026,13 @@
       editId = null;
       modalRecord = null;
       showLogin();
+    });
+
+    $('sidebar-toggle').addEventListener('click', () => {
+      const sb = $('sidebar');
+      sb.classList.toggle('collapsed');
+      const btn = $('sidebar-toggle');
+      btn.title = sb.classList.contains('collapsed') ? 'Expandir menú' : 'Colapsar menú';
     });
 
     document.querySelectorAll('.nav-item').forEach(n =>
@@ -2946,6 +3145,7 @@
     $('btn-regalia-csv').addEventListener('click', exportRegaliaExcel);
     $('btn-he-save').addEventListener('click', saveHorasExtra);
     $('btn-inc-add').addEventListener('click', addIncentivo);
+    $('btn-ded-add').addEventListener('click', addDeduccion);
     $('btn-vp-save').addEventListener('click', savePagoVacaciones);
     $('btn-vp-delete').addEventListener('click', deletePagoVacaciones);
     $('vp-modalidad').addEventListener('change', () => {
@@ -3038,6 +3238,9 @@
     $('btn-reintegrar-cancel').addEventListener('click', closeReintegrar);
     $('reintegrar-modal').addEventListener('click', (e) => { if (e.target === $('reintegrar-modal')) closeReintegrar(); });
     $('btn-reintegrar-confirm').addEventListener('click', confirmReintegrar);
+    $('reintegrar-mismo-puesto').addEventListener('change', function() {
+      $('reintegrar-cambios').classList.toggle('hidden', this.checked);
+    });
 
     $('btn-doc-logo').addEventListener('click', pickDocLogo);
     $('doc-logo-file').addEventListener('change', handleDocLogoFile);
@@ -3049,22 +3252,57 @@
   wire();
   init();
 
-  /* ============ AUTO-UPDATE LISTENERS ============ */
+  /* ============ AUTO-UPDATE BAR ============ */
+  const ubBar = $('update-bar');
+  const ubText = $('update-bar-text');
+  const ubVersion = $('update-bar-version');
+  const ubIcon = $('update-bar-icon');
+  const ubProgressWrap = $('update-bar-progress-wrap');
+  const ubProgressFill = $('update-bar-progress-fill');
+  const ubPercent = $('update-bar-percent');
+  const ubActions = $('update-bar-actions');
+  const ubBtnInstall = $('update-bar-btn-install');
+  const ubBtnClose = $('update-bar-btn-close');
+
+  function showUpdateBar() { ubBar.classList.remove('hidden'); }
+  function hideUpdateBar() { ubBar.classList.add('hidden'); }
+
   if (window.api.onUpdateAvailable) {
     window.api.onUpdateAvailable((data) => {
-      toast('Nueva version v' + data.version + ' disponible. Descargando...', 'info', 5000);
+      showUpdateBar();
+      ubIcon.innerHTML = '&#8635;';
+      ubText.textContent = 'Nueva version disponible — descargando...';
+      ubVersion.textContent = 'v' + data.version;
+      ubProgressWrap.classList.remove('hidden');
+      ubActions.classList.add('hidden');
+      ubProgressFill.style.width = '0%';
+      ubPercent.textContent = '0%';
     });
   }
   if (window.api.onUpdateProgress) {
     window.api.onUpdateProgress((data) => {
-      toast('Descargando actualizacion: ' + data.percent + '%', 'info', 2000);
+      ubProgressFill.style.width = data.percent + '%';
+      ubPercent.textContent = data.percent + '%';
     });
   }
   if (window.api.onUpdateDownloaded) {
     window.api.onUpdateDownloaded((data) => {
-      if (confirm('KARDEX Digital v' + data.version + ' descargado.\n\nSe cerrara la app para instalar la actualizacion.\nGuarda tu trabajo antes de continuar.\n\nInstalar ahora?')) {
-        window.api.updateInstall();
-      }
+      ubIcon.innerHTML = '&#10003;';
+      ubText.textContent = 'Actualizacion v' + data.version + ' lista para instalar.';
+      ubProgressWrap.classList.add('hidden');
+      ubActions.classList.remove('hidden');
     });
   }
+  if (window.api.onUpdateError) {
+    window.api.onUpdateError((data) => {
+      ubIcon.innerHTML = '&#10007;';
+      ubText.textContent = 'Error: ' + (data.message || 'No se pudo descargar la actualizacion.');
+      ubVersion.textContent = '';
+      ubProgressWrap.classList.add('hidden');
+      ubActions.classList.remove('hidden');
+      ubBtnInstall.classList.add('hidden');
+    });
+  }
+  ubBtnInstall.addEventListener('click', () => { window.api.updateInstall(); });
+  ubBtnClose.addEventListener('click', () => { hideUpdateBar(); ubBtnInstall.classList.remove('hidden'); });
 })();

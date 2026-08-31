@@ -58,15 +58,15 @@ function pushTecnicos() {
 }
 
 function pushReportes() {
-  const rows = db.all(`SELECT r.*, c.nombre AS client_nombre, e.nombre AS equipo_nombre
+  const rows = db.all(`SELECT r.*, c.nombre AS client_nombre_join, e.nombre AS equipo_nombre_join
     FROM reportes r
     LEFT JOIN clients c ON c.id = r.client_id
     LEFT JOIN equipos e ON e.id = r.equipo_id`);
   return rows.map((r) => ({
     id: r.id,
     client_id: r.client_id,
-    client_nombre: r.client_nombre || '',
-    equipo_nombre: r.equipo_nombre || '',
+    client_nombre: r.client_nombre || r.client_nombre_join || '',
+    equipo_nombre: r.equipo_nombre || r.equipo_nombre_join || '',
     descripcion: r.descripcion || '',
     fecha: r.fecha || '',
     estado: r.estado || 'abierto',
@@ -79,6 +79,10 @@ function pushReportes() {
     adjuntos: arrAdjuntos(r.adjuntos),
     lat: r.lat != null ? Number(r.lat) : null,
     lng: r.lng != null ? Number(r.lng) : null,
+    asignado_at: r.asignado_at || '',
+    grupo_id: r.grupo_id || '',
+    grupo_nombre: r.grupo_nombre || '',
+    enviar_grupo: r.enviar_grupo != null ? Number(r.enviar_grupo) : 1,
     updated_at: r.updated_at || (r.creado ? r.creado + 'T00:00:00Z' : new Date().toISOString())
   }));
 }
@@ -119,20 +123,37 @@ function pushTombstones() {
 function aplicarCambios(cambios) {
   let aplicados = 0;
   const esperaIds = [];
+  const asignadoIds = [];
   for (const c of cambios || []) {
     if (c.tipo === 'reporte_upsert' && c.reporte) {
       const rp = c.reporte;
-      const existing = db.get('SELECT id FROM reportes WHERE id = ?', [rp.id]);
+      const existing = db.get('SELECT * FROM reportes WHERE id = ?', [rp.id]);
       if (!existing) {
         db.run(`INSERT INTO reportes (id, client_id, client_nombre, equipo_nombre, descripcion, fecha, estado, prioridad,
-          solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, adjuntos, lat, lng, enviado, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          solucion, tecnico_id, tecnico_nombre, resuelto_at, archivado, adjuntos, lat, lng, grupo_id, grupo_nombre, enviar_grupo, enviado, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
           [rp.id, rp.client_id || 0, rp.client_nombre || '', rp.equipo_nombre || '', rp.descripcion || '',
            rp.fecha || '', rp.estado || 'abierto', rp.prioridad || 'normal', rp.solucion || '',
            rp.tecnico_id || null, rp.tecnico_nombre || '', rp.resuelto_at || null,
-           rp.archivado ? 1 : 0, JSON.stringify(rp.adjuntos || []), rp.lat || null, rp.lng || null, rp.updated_at || '']);
+           rp.archivado ? 1 : 0, JSON.stringify(rp.adjuntos || []), rp.lat || null, rp.lng || null,
+           rp.grupo_id || '', rp.grupo_nombre || '', rp.enviar_grupo != null ? (rp.enviar_grupo ? 1 : 0) : 1,
+           rp.updated_at || '']);
         db.run('INSERT INTO reporte_eventos (reporte_id, tipo, detalle, creado) VALUES (?,?,?,?)',
           [rp.id, 'creado', 'Reporte creado desde móvil', rp.updated_at || new Date().toISOString()]);
+        aplicados++;
+      } else {
+        const oldTec = existing.tecnico_id || null;
+        const newTec = rp.tecnico_id || null;
+        db.run(`UPDATE reportes SET client_id=?, client_nombre=?, equipo_nombre=?, descripcion=?, fecha=?, estado=?, prioridad=?,
+          solucion=?, tecnico_id=?, tecnico_nombre=?, resuelto_at=?, archivado=?, adjuntos=?, lat=?, lng=?,
+          grupo_id=?, grupo_nombre=?, enviar_grupo=?, updated_at=? WHERE id=?`,
+          [rp.client_id || 0, rp.client_nombre || '', rp.equipo_nombre || '', rp.descripcion || '',
+           rp.fecha || '', rp.estado || 'abierto', rp.prioridad || 'normal', rp.solucion || '',
+           newTec, rp.tecnico_nombre || '', rp.resuelto_at || null,
+           rp.archivado ? 1 : 0, JSON.stringify(rp.adjuntos || []), rp.lat || null, rp.lng || null,
+           rp.grupo_id || '', rp.grupo_nombre || '', rp.enviar_grupo != null ? (rp.enviar_grupo ? 1 : 0) : 1,
+           rp.updated_at || existing.updated_at || '', rp.id]);
+        if (newTec && oldTec !== newTec) asignadoIds.push(rp.id);
         aplicados++;
       }
       continue;
@@ -145,13 +166,20 @@ function aplicarCambios(cambios) {
       if (!rp) continue;
       let rAt = null;
       if (c.estado === 'resuelto') rAt = rp.estado === 'resuelto' ? rp.resuelto_at : db.shiftUtcToLocal(c.creado, 'dt');
-      db.run('UPDATE reportes SET estado = ?, resuelto_at = ?, updated_at = ? WHERE id = ?', [c.estado, rAt, c.creado, c.reporte_id]);
+      if (c.enviar_grupo != null) {
+        db.run('UPDATE reportes SET estado = ?, resuelto_at = ?, enviar_grupo = ?, updated_at = ? WHERE id = ?', [c.estado, rAt, c.enviar_grupo ? 1 : 0, c.creado, c.reporte_id]);
+      } else {
+        db.run('UPDATE reportes SET estado = ?, resuelto_at = ?, updated_at = ? WHERE id = ?', [c.estado, rAt, c.creado, c.reporte_id]);
+      }
+      if (c.solucion) {
+        db.run('UPDATE reportes SET solucion = ? WHERE id = ?', [c.solucion, c.reporte_id]);
+      }
       const ya = db.get('SELECT id FROM reporte_eventos WHERE reporte_id = ? AND tipo = ? AND detalle = ?', [c.reporte_id, 'estado', detalle]);
       if (!ya) {
         db.run('INSERT INTO reporte_eventos (reporte_id, tipo, detalle, creado) VALUES (?,?,?,?)',
           [c.reporte_id, 'estado', detalle, db.shiftUtcToLocal(c.creado, 'dt')]);
       }
-      if (c.estado === 'espera_repuesto' || c.estado === 'espera_cliente') {
+      if ((c.estado === 'espera_repuesto' || c.estado === 'espera_cliente') && c.enviar_grupo !== 0) {
         esperaIds.push(c.reporte_id);
       }
       aplicados++;
@@ -227,6 +255,9 @@ function aplicarCambios(cambios) {
   if (esperaIds.length) {
     setTimeout(() => triggerEsperaWhatsApp(esperaIds), 500);
   }
+  if (asignadoIds.length) {
+    setTimeout(() => triggerAsignadoWhatsApp(asignadoIds), 500);
+  }
   return aplicados;
 }
 
@@ -235,6 +266,15 @@ function triggerEsperaWhatsApp(ids) {
     if (typeof global.onEsperaDetectado !== 'function') return;
     for (const id of ids) {
       global.onEsperaDetectado(id);
+    }
+  } catch (e) { /* noop */ }
+}
+
+function triggerAsignadoWhatsApp(ids) {
+  try {
+    if (typeof global.onAsignadoDetectado !== 'function') return;
+    for (const id of ids) {
+      global.onAsignadoDetectado(id);
     }
   } catch (e) { /* noop */ }
 }

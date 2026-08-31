@@ -121,15 +121,25 @@ app.post('/api/reportes/:id/asignar', a.requireAuth('tecnico'), requireGerente, 
     const tecnicoNombre = String(req.body.tecnico_nombre || '').trim();
     const rp = d.db.prepare('SELECT id FROM reportes WHERE id = ? AND deleted = 0').get(id);
     if (!rp) return res.status(404).json({ ok: false, error: 'Reporte no encontrado' });
-    const out = d.asignarReporte(id, tecnicoId, tecnicoNombre);
+    const out = d.asignarReporte(id, tecnicoId, tecnicoNombre, req.user.nombre);
+    const fullRp = d.db.prepare('SELECT client_nombre, equipo_nombre, descripcion FROM reportes WHERE id = ?').get(id);
     if (tecnicoId) {
-      const fullRp = d.db.prepare('SELECT client_nombre, equipo_nombre, descripcion FROM reportes WHERE id = ?').get(id);
       const tokens = d.getPushTokens(tecnicoId);
       if (tokens.length && fullRp) {
         const cliente = fullRp.client_nombre || 'Cliente';
         const equipo = fullRp.equipo_nombre || '';
         const desc = fullRp.descripcion ? ' - ' + fullRp.descripcion.slice(0, 60) : '';
         sendPush(tokens, 'Reporte asignado', cliente + (equipo ? ' - ' + equipo : '') + desc, { reporteId: String(id), tipo: 'asignado' }).catch((e) => console.log('PUSH ERR: ' + e.message));
+      }
+    }
+    if (tecnicoId && fullRp) {
+      const gerenteTokens = d.getGerentePushTokens();
+      if (gerenteTokens.length) {
+        const quien = req.user && req.user.nombre ? String(req.user.nombre) : 'Un gerente';
+        const clienteGer = fullRp.client_nombre || 'Cliente';
+        sendPush(gerenteTokens, 'Asignacion de tecnico',
+          quien + ' asigno al tecnico ' + tecnicoNombre + ' el reporte #' + id + ' (' + clienteGer + ')',
+          { reporteId: String(id), tipo: 'asignado-gerente' }).catch((e) => console.log('PUSH ERR: ' + e.message));
       }
     }
     res.json({ ok: true, data: out });
@@ -199,17 +209,26 @@ app.post('/api/reportes/:id/estado', a.requireAuth('tecnico'), (req, res) => {
   const isGerente = (req.user.rol || 'tecnico') === 'gerente';
   if (rp.estado === 'resuelto' && !isGerente) return res.status(403).json({ ok: false, error: 'Reporte resuelto. Solo el gerente puede cambiar el estado.' });
   try {
-    const out = d.setEstado(rp.id, estado, req.user.nombre);
+    const solucion = String(req.body.solucion || '').trim();
+    const enviarGrupo = req.body.enviar_grupo != null ? (req.body.enviar_grupo ? 1 : 0) : null;
+    const out = d.setEstado(rp.id, estado, req.user.nombre, { solucion: solucion || null, enviar_grupo });
     const nota = String(req.body.nota || '').trim();
     if (nota) {
       d.addNota(rp.id, req.user.nombre, nota);
     }
+    const fotosArr = [];
     const foto = req.body.foto;
-    sdbg('[estado] reporte:' + rp.id + ' estado:' + estado + ' foto:' + (foto ? JSON.stringify({ nombre: foto.nombre, tipo: foto.tipo, datosLen: String(foto.datos || '').length }) : 'null'));
-    if (foto && foto.nombre && foto.datos) {
-      const nombre = String(foto.nombre || '').trim();
-      if (/^[A-Za-z0-9._@-]+$/.test(nombre)) {
-        try { d.addFoto(rp.id, nombre, foto.tipo || 'image/jpeg', foto.datos, req.user.nombre); sdbg('[estado] Foto guardada: ' + nombre); } catch (e) { sdbg('[estado] Error guardando foto: ' + e.message); }
+    if (foto && foto.nombre && foto.datos) fotosArr.push(foto);
+    if (Array.isArray(req.body.fotos)) {
+      for (const f of req.body.fotos.slice(0, 10)) {
+        if (f && f.nombre && f.datos) fotosArr.push(f);
+      }
+    }
+    sdbg('[estado] reporte:' + rp.id + ' estado:' + estado + ' solucion:' + solucion + ' enviar_grupo:' + enviarGrupo + ' fotos:' + fotosArr.length);
+    for (const ft of fotosArr) {
+      const nombre = String(ft.nombre || '').trim();
+      if (nombre && /^[A-Za-z0-9._@-]+$/.test(nombre)) {
+        try { d.addFoto(rp.id, nombre, ft.tipo || 'image/jpeg', ft.datos, req.user.nombre); sdbg('[estado] Foto guardada: ' + nombre); } catch (e) { sdbg('[estado] Error guardando foto: ' + e.message); }
       } else {
         sdbg('[estado] Nombre foto invalido: ' + nombre);
       }
@@ -413,9 +432,12 @@ app.post('/api/sync', a.requireDevice, (req, res) => {
         if (rp) cambios.push({ seq: l.seq, tipo: 'reporte_upsert', reporte: d.reportePublico(rp) });
         continue;
       }
-      if (l.tipo === 'estado') {
+if (l.tipo === 'estado') {
         const extra = JSON.parse(l.extra || '{}');
-        cambios.push({ seq: l.seq, tipo: 'estado', reporte_id: l.ref_id, estado: extra.estado, autor: extra.autor, creado: extra.creado });
+        const cb = { seq: l.seq, tipo: 'estado', reporte_id: l.ref_id, estado: extra.estado, autor: extra.autor, creado: extra.creado };
+        if (extra.enviar_grupo != null) cb.enviar_grupo = extra.enviar_grupo;
+        if (extra.solucion != null) cb.solucion = extra.solucion;
+        cambios.push(cb);
       } else if (l.tipo === 'nota') {
         const extra = JSON.parse(l.extra || '{}');
         const n = d.db.prepare('SELECT * FROM notas WHERE id = ?').get(l.ref_id);
@@ -471,7 +493,12 @@ async function sendPush(tokens, title, body, data) {
         data: data || {}
       });
     } catch (e) {
-      console.log('FCM send error:', e.message);
+      const code = (e.errorInfo && e.errorInfo.code) || '';
+      if (/not-registered|invalid-registration|invalid-argument|sender-id-mismatch|unregistered/.test(code)) {
+        d.removePushToken(token);
+      } else {
+        console.log('FCM send error:', code || e.message);
+      }
     }
   }
 }
@@ -513,6 +540,8 @@ app.post('/api/push/notify-update', async (req, res) => {
 
 async function checkReminders() {
   try {
+    const horaDR = (new Date().getUTCHours() - 4 + 24) % 24;
+    if (horaDR < 6 || horaDR >= 18) return;
     const reportes = d.getReportesParaRecordatorio();
     if (!reportes.length) return;
     for (const rp of reportes) {
@@ -531,7 +560,7 @@ async function checkReminders() {
 }
 
 const PORT = process.env.PORT || 3200;
-const APP_VERSION = '1.5.15';
+const APP_VERSION = '1.5.17';
 const APP_APK_URL = 'https://nexalert.duckdns.org/updates/app-latest.apk';
 
 app.get('/api/app-version', (req, res) => {
@@ -543,6 +572,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('Primer paso (NexAlert): registrar dispositivo en /api/device/register y guardar deviceToken en settings.');
   setInterval(checkReminders, 5 * 60 * 1000);
   setTimeout(checkReminders, 10 * 1000);
+  const pruneTokens = () => { try { const n = d.pruneOldPushTokens(120); d.trimAllPushTokens(); if (n > 0) console.log('PRUNE PUSH TOKENS: quedan ' + n); } catch (e) { console.log('PRUNE ERR: ' + e.message); } };
+  setTimeout(pruneTokens, 15 * 1000);
+  setInterval(pruneTokens, 12 * 60 * 60 * 1000);
   setInterval(() => {
     try {
       const n = d.autoArchiveResolved();
@@ -553,6 +585,8 @@ app.listen(PORT, '0.0.0.0', () => {
     try { d.autoArchiveResolved(); } catch (e) { /* noop */ }
   }, 30 * 1000);
 });
+
+
 
 
 

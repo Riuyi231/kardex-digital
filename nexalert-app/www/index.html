@@ -46,11 +46,12 @@
 
 <main id="view" class="hidden">
   <section id="home">
-    <div class="home-head">
+<div class="home-head">
       <div>
         <h1>Mis reportes</h1>
         <p id="ultimo-update" class="hint"></p>
       </div>
+      <button id="btn-arch-home" class="btn-sm btn-outline" type="button">Archivados</button>
     </div>
     <div id="filtro">
       <input id="buscar" type="search" placeholder="Buscar cliente, equipo o problema">
@@ -196,13 +197,13 @@
     <div id="espera-form" class="hidden">
       <p class="espera-hint" id="espera-hint-text">Describe la pieza que se necesita o el motivo de la espera.</p>
       <textarea id="esp-nota" rows="3" placeholder="Ej: Falta bombillo LED 15W..."></textarea>
-      <div class="esp-foto-section">
+<div class="esp-foto-section">
         <div class="esp-foto-btns">
           <button id="esp-foto-cam" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Foto</button>
           <button id="esp-foto-gal" type="button" class="btn-sm btn-outline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Galeria</button>
         </div>
-        <img id="esp-foto-preview" class="esp-foto-preview hidden" alt="preview">
-        <span id="esp-foto-nombre" class="form-hint"></span>
+        <div id="esp-foto-list" class="esp-foto-list"></div>
+        <label class="esp-grupo-chk"><input type="checkbox" id="esp-enviar-grupo" checked> Enviar aviso al grupo de WhatsApp</label>
       </div>
       <div class="modal-actions">
         <button id="esp-cancel" class="btn-ghost">Cancelar</button>
@@ -226,9 +227,11 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="app.js?v=1.5.15"></script>
+<script src="app.js?v=1.5.17"></script>
 </body>
 </html>
+
+
 
 
 

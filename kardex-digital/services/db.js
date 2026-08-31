@@ -183,6 +183,29 @@ function migrate() {
       created_by INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_historial_emp ON historial_empleados(employee_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS deducciones_manuales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      mes INTEGER NOT NULL,
+      anio INTEGER NOT NULL,
+      quincena INTEGER NOT NULL DEFAULT 0,
+      monto REAL NOT NULL DEFAULT 0,
+      motivo TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      created_by INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_deducciones_emp ON deducciones_manuales(employee_id, anio, mes);
+    CREATE TABLE IF NOT EXISTS salario_historial (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      salario REAL NOT NULL DEFAULT 0,
+      salario_anterior REAL NOT NULL DEFAULT 0,
+      tipo_salario TEXT NOT NULL DEFAULT 'mensual',
+      fecha_cambio TEXT NOT NULL,
+      motivo TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_salario_hist_emp ON salario_historial(employee_id, fecha_cambio);
     CREATE INDEX IF NOT EXISTS idx_employees_cedula ON employees(cedula);
     CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_vacaciones_emp ON vacaciones(employee_id);
@@ -195,6 +218,16 @@ function migrate() {
   ensureVacacionesColumns();
   ensureHorasExtraColumns();
   ensureLiquidacionesColumns();
+  ensureSalarioHistorialColumns();
+}
+
+function ensureSalarioHistorialColumns() {
+  try {
+    const cols = new Set(all('PRAGMA table_info(salario_historial)').map((c) => c.name));
+    if (!cols.has('salario_anterior')) {
+      run("ALTER TABLE salario_historial ADD COLUMN salario_anterior REAL NOT NULL DEFAULT 0");
+    }
+  } catch (e) { /* tabla no existe aún */ }
 }
 
 function ensureEmployeeColumns() {
@@ -461,11 +494,23 @@ const employees = {
     const opts = extra || {};
     const fechaBaja = status === 'inactivo' ? (opts.fecha_baja || nowIso()) : '';
     const fechaIngreso = status === 'activo' ? (opts.fecha_ingreso || u.fecha_ingreso) : u.fecha_ingreso;
-    run('UPDATE employees SET status = ?, fecha_baja = ?, fecha_ingreso = ?, updated_at = ? WHERE id = ?',
-      [status, fechaBaja, fechaIngreso, nowIso(), id]);
+    const nuevoPuesto = opts.puesto !== undefined ? opts.puesto : u.puesto;
+    const nuevoDepto = opts.departamento !== undefined ? opts.departamento : u.departamento;
+    const nuevoSucursal = opts.sucursal !== undefined ? opts.sucursal : u.sucursal;
+    const nuevoSalario = opts.salario !== undefined ? Number(opts.salario) : u.salario;
+    const nuevoTipoSalario = opts.tipo_salario || u.tipo_salario;
+    run('UPDATE employees SET status = ?, fecha_baja = ?, fecha_ingreso = ?, puesto = ?, departamento = ?, sucursal = ?, salario = ?, tipo_salario = ?, updated_at = ? WHERE id = ?',
+      [status, fechaBaja, fechaIngreso, nuevoPuesto, nuevoDepto, nuevoSucursal, Number(nuevoSalario) || 0, nuevoTipoSalario, nowIso(), id]);
     historial.log(id, 'status', u.status || 'activo', status, opts.userId || null);
     if (fechaBaja !== u.fecha_baja) historial.log(id, 'fecha_baja', u.fecha_baja, fechaBaja, opts.userId || null);
     if (fechaIngreso !== u.fecha_ingreso) historial.log(id, 'fecha_ingreso', u.fecha_ingreso, fechaIngreso, opts.userId || null);
+    if (opts.puesto !== undefined && opts.puesto !== u.puesto) historial.log(id, 'puesto', u.puesto, opts.puesto, opts.userId || null);
+    if (opts.departamento !== undefined && opts.departamento !== u.departamento) historial.log(id, 'departamento', u.departamento, opts.departamento, opts.userId || null);
+    if (opts.sucursal !== undefined && opts.sucursal !== u.sucursal) historial.log(id, 'sucursal', u.sucursal, opts.sucursal, opts.userId || null);
+    if (opts.salario !== undefined && Number(opts.salario) !== Number(u.salario)) {
+      historial.log(id, 'salario', u.salario, opts.salario, opts.userId || null);
+      salarioHistorial.record(id, Number(opts.salario), nuevoTipoSalario, 'Reintegración — cambio de salario', Number(u.salario));
+    }
     return employees.get(id);
   },
   create(data, userId) {
@@ -489,6 +534,9 @@ const employees = {
        d.foto || null, d.frente || null, d.reverso || null, userId || null, now, now]);
     const last = get('SELECT last_insert_rowid() AS id');
     const created = employees.get(last.id);
+    if (Number(d.salario) > 0) {
+      salarioHistorial.record(created.id, Number(d.salario), d.tipo_salario || 'mensual', 'Alta');
+    }
     historial.logCreate(d, created.id, userId);
     return created;
   },
@@ -506,6 +554,9 @@ const employees = {
        d.profesion, d.tipo_sangre, d.puesto, d.departamento, d.sucursal || '', d.fecha_emision, d.fecha_vencimiento, d.nota,
        Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '',
        d.foto || null, d.frente || null, d.reverso || null, nowIso(), id]);
+    if (Number(data && data.salario) && Number(data.salario) !== Number(u.salario)) {
+      salarioHistorial.record(id, Number(data.salario), data.tipo_salario || u.tipo_salario, 'Cambio de salario', Number(u.salario));
+    }
     historial.logUpdate(u, data || {}, id, userId);
     return employees.get(id);
   },
@@ -515,6 +566,8 @@ const employees = {
     run('DELETE FROM horas_extra WHERE employee_id = ?', [id]);
     run('DELETE FROM incentivos WHERE employee_id = ?', [id]);
     run('DELETE FROM pago_vacaciones WHERE employee_id = ?', [id]);
+    run('DELETE FROM deducciones_manuales WHERE employee_id = ?', [id]);
+    run('DELETE FROM salario_historial WHERE employee_id = ?', [id]);
     return true;
   }
 };
@@ -664,6 +717,110 @@ const pagoVacaciones = {
   delete(id) {
     run('DELETE FROM pago_vacaciones WHERE id = ?', [Number(id)]);
     return true;
+  }
+};
+
+// Deducciones manuales por empleado, período y quincena (0=todas, 1=primera, 2=segunda).
+const deduccionesManuales = {
+  listForPeriod(mes, anio, quincena) {
+    let sql = 'SELECT * FROM deducciones_manuales WHERE mes = ? AND anio = ?';
+    const params = [Number(mes), Number(anio)];
+    if (quincena) { sql += ' AND quincena = ?'; params.push(Number(quincena)); }
+    sql += ' ORDER BY employee_id, id';
+    return all(sql, params);
+  },
+  listForEmployee(employeeId, mes, anio) {
+    return all('SELECT * FROM deducciones_manuales WHERE employee_id = ? AND mes = ? AND anio = ? ORDER BY quincena, id',
+      [Number(employeeId), Number(mes), Number(anio)]);
+  },
+  create({ employee_id, mes, anio, quincena, monto, motivo }, userId) {
+    const id = Number(employee_id);
+    const m = Number(mes);
+    const a = Number(anio);
+    const q = Number(quincena) || 0;
+    const montoN = Number(monto) || 0;
+    if (!id || !m || !a) throw new Error('Faltan empleado o período');
+    if (montoN <= 0) throw new Error('El monto debe ser mayor que 0');
+    const now = nowIso();
+    run('INSERT INTO deducciones_manuales (employee_id, mes, anio, quincena, monto, motivo, created_at, updated_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+      [id, m, a, q, montoN, String(motivo || ''), now, now, userId || null]);
+    return { id: get('SELECT last_insert_rowid() AS id').id, employee_id: id, mes: m, anio: a, quincena: q, monto: montoN, motivo: String(motivo || '') };
+  },
+  update(id, { monto, motivo, quincena }) {
+    const existing = get('SELECT * FROM deducciones_manuales WHERE id = ?', [Number(id)]);
+    if (!existing) throw new Error('Deducción no encontrada');
+    const montoN = Number(monto) || existing.monto;
+    if (montoN <= 0) throw new Error('El monto debe ser mayor que 0');
+    const now = nowIso();
+    run('UPDATE deducciones_manuales SET monto = ?, motivo = ?, quincena = ?, updated_at = ? WHERE id = ?',
+      [montoN, motivo !== undefined ? String(motivo) : existing.motivo, quincena !== undefined ? Number(quincena) : existing.quincena, now, existing.id]);
+    return { id: existing.id, employee_id: existing.employee_id, mes: existing.mes, anio: existing.anio, quincena: quincena !== undefined ? Number(quincena) : existing.quincena, monto: montoN, motivo: motivo !== undefined ? String(motivo) : existing.motivo };
+  },
+  delete(id) {
+    run('DELETE FROM deducciones_manuales WHERE id = ?', [Number(id)]);
+    return true;
+  }
+};
+
+// Historial de salarios para cálculo proporcional de salario 13.
+const salarioHistorial = {
+  record(employeeId, salario, tipo_salario, motivo, salarioAnterior) {
+    const now = nowIso();
+    run('INSERT INTO salario_historial (employee_id, salario, salario_anterior, tipo_salario, fecha_cambio, motivo) VALUES (?,?,?,?,?,?)',
+      [Number(employeeId), Number(salario), Number(salarioAnterior) || 0, String(tipo_salario || 'mensual'), now, String(motivo || '')]);
+  },
+  listForEmployee(employeeId) {
+    return all('SELECT * FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio', [Number(employeeId)]);
+  },
+  getSalarioPromedio(employeeId, anio) {
+    // Todos los registros de cambio de salario
+    const allChanges = all('SELECT salario, salario_anterior, fecha_cambio FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio',
+      [Number(employeeId)]);
+    if (!allChanges.length) return null;
+    const emp = get('SELECT salario FROM employees WHERE id = ?', [Number(employeeId)]);
+    if (!emp) return null;
+
+    const inicioAnio = new Date(anio + '-01-01');
+    const finAnio = new Date(anio + '-12-31');
+
+    // Determinar salario vigente al 1 de enero
+    let salarioInicio = null;
+    for (const ch of allChanges) {
+      if (new Date(ch.fecha_cambio) < inicioAnio) {
+        salarioInicio = ch.salario; // el salario después del último cambio antes del año
+      }
+    }
+    // Si no hay cambios antes del año, usar salario_anterior del primer cambio del año
+    if (salarioInicio === null) {
+      const primer = allChanges.find(ch => new Date(ch.fecha_cambio) >= inicioAnio);
+      salarioInicio = primer && primer.salario_anterior > 0 ? primer.salario_anterior : emp.salario;
+    }
+
+    // Segmentos de salario durante el año
+    const cambiosEnAnio = allChanges.filter(ch => {
+      const fc = new Date(ch.fecha_cambio);
+      return fc >= inicioAnio && fc <= finAnio;
+    });
+
+    // Construir timeline
+    const timeline = [];
+    const primerCambio = cambiosEnAnio.length ? new Date(cambiosEnAnio[0].fecha_cambio) : finAnio;
+    const diasPre = Math.round((primerCambio - inicioAnio) / 86400000);
+    if (diasPre > 0) timeline.push({ salario: salarioInicio, dias: diasPre });
+
+    for (let i = 0; i < cambiosEnAnio.length; i++) {
+      const fechaInicio = new Date(cambiosEnAnio[i].fecha_cambio);
+      const fechaFin = i + 1 < cambiosEnAnio.length ? new Date(cambiosEnAnio[i + 1].fecha_cambio) : new Date(anio + '-12-31');
+      const dias = Math.round((fechaFin - fechaInicio) / 86400000);
+      if (dias > 0) timeline.push({ salario: cambiosEnAnio[i].salario, dias });
+    }
+
+    let totalDias = 0, totalSalarioDias = 0;
+    for (const seg of timeline) {
+      totalDias += seg.dias;
+      totalSalarioDias += seg.salario * seg.dias;
+    }
+    return totalDias > 0 ? totalSalarioDias / totalDias : salarioInicio;
   }
 };
 
@@ -886,5 +1043,5 @@ const backups = {
 module.exports = {
   open, close, persistNow,
   hashPassword, verifyPassword,
-  auth, users, employees, vacaciones, horasExtra, incentivos, pagoVacaciones, liquidaciones, reportes, audit, settings, mailLog, contactos, historial, backups, nowIso
+  auth, users, employees, vacaciones, horasExtra, incentivos, pagoVacaciones, deduccionesManuales, salarioHistorial, liquidaciones, reportes, audit, settings, mailLog, contactos, historial, backups, nowIso
 };

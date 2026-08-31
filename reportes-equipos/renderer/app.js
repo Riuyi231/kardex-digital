@@ -2064,12 +2064,6 @@ async function enviarReportePDF(id) {
 async function setTecnico(id, tecnicoId) {
   await window.api.reportes.setTecnico(id, tecnicoId);
   await refreshAll();
-  if (tecnicoId) {
-    try {
-      const r = await window.api.reportes.asignarWhatsApp(id);
-      if (r.ok) alert('Notificación de asignación enviada al grupo: ' + r.data.sentTo);
-    } catch (e) { /* noop - envio automatico */ }
-  }
 }
 
 async function archivarReporte(id) {

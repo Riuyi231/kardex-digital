@@ -21,6 +21,7 @@ const { autoUpdater } = require('electron-updater');
 
 const dbLocal = require('./services/db');
 const dbRpc = require('./services/db-rpc-client');
+const dbCloud = require('./services/db-cloud-client');
 const dbServer = require('./services/db-rpc-server');
 const config = require('./services/config');
 const discovery = require('./services/discovery');
@@ -63,6 +64,86 @@ let currentUser = null;
 let db = null;
 let serverTray = null;
 let isServer = false;
+
+// Envía un archivo al servidor KARDEX para que ejecute el OCR remoto y
+// devuelva los campos de la cédula con el mismo shape que processFile local.
+async function processCedulaRemote(filePath, serverUrl, token) {
+  if (!fs.existsSync(filePath)) throw new Error('El archivo no existe');
+  const data = fs.readFileSync(filePath).toString('base64');
+  const name = path.basename(filePath);
+  const url = String(serverUrl).replace(/\/+$/, '') + '/ocr';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-kardex-token': token || '',
+        'x-kardex-node': require('./services/machine').machineId()
+      },
+      body: JSON.stringify({ name, data })
+    });
+  } catch (e) {
+    throw new Error('No se pudo contactar el servidor para el OCR remoto: ' + (e.message || e));
+  }
+  // 404 => el servidor no ofrece el endpoint OCR (versión antigua). Señalizamos
+  // para que el llamador pueda degradar a OCR local.
+  if (resp.status === 404) {
+    const err = new Error('OCR remoto no disponible en el servidor');
+    err.code = 'OCR_REMOTE_UNAVAILABLE';
+    throw err;
+  }
+  const payload = await resp.json().catch(() => null);
+  if (!payload) throw new Error('El servidor devolvió una respuesta inválida');
+  if (payload.ok) {
+    return {
+      ...payload.data,
+      fileName: payload.data && payload.data.name ? payload.data.name : name
+    };
+  }
+  throw new Error('OCR remoto falló: ' + (payload.error || 'error desconocido'));
+}
+
+// Envía un archivo al servidor cloud (internet, OAuth Bearer) para que ejecute el
+// OCR y devuelva los campos de la cédula con el mismo shape que processFile local.
+async function processCedulaCloud(filePath, cloudUrl, token) {
+  if (!fs.existsSync(filePath)) throw new Error('El archivo no existe');
+  const data = fs.readFileSync(filePath).toString('base64');
+  const name = path.basename(filePath);
+  const url = String(cloudUrl).replace(/\/+$/, '') + '/api/ocr';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + (token || ''),
+        'x-kardex-node': require('./services/machine').machineId()
+      },
+      body: JSON.stringify({ name, data })
+    });
+  } catch (e) {
+    throw new Error('No se pudo contactar el servidor cloud para el OCR: ' + (e.message || e));
+  }
+  if (resp.status === 404) {
+    const err = new Error('OCR en la nube no disponible en el servidor');
+    err.code = 'OCR_REMOTE_UNAVAILABLE';
+    throw err;
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    const payload = await resp.json().catch(() => null);
+    throw new Error('Sin autorización para el OCR en la nube: ' + ((payload && payload.error) || resp.status));
+  }
+  const payload = await resp.json().catch(() => null);
+  if (!payload) throw new Error('El servidor cloud devolvió una respuesta inválida');
+  if (payload.ok) {
+    return {
+      ...payload.data,
+      fileName: payload.data && payload.data.name ? payload.data.name : name
+    };
+  }
+  throw new Error('OCR en la nube falló: ' + (payload.error || 'error desconocido'));
+}
 
 function dataDir() {
   if (process.env.KARDEX_DATA_DIR) return process.env.KARDEX_DATA_DIR;
@@ -107,7 +188,17 @@ function loadAiKeysFromDb() {
 async function openDb() {
   const dir = dataDir();
   const cfg = config.load(configPath());
-  if (cfg.serverUrl) {
+  if (cfg.cloud && cfg.cloud.enabled && cfg.cloud.url) {
+    dbCloud.configure({ url: cfg.cloud.url, token: cfg.cloud.token || '' });
+    db = dbCloud;
+    const ping = await dbCloud.ping();
+    if (ping.ok) {
+      loadAiKeysFromDb();
+      console.log('[KARDEX] Conectado al servidor cloud:', cfg.cloud.url);
+    } else {
+      console.warn('[KARDEX] Servidor cloud no alcanzable en', cfg.cloud.url + ':', ping.error);
+    }
+  } else if (cfg.serverUrl) {
     dbRpc.configure({ url: cfg.serverUrl, token: cfg.token });
     db = dbRpc;
     const ping = await dbRpc.ping();
@@ -272,7 +363,8 @@ async function startServerMode() {
   await discovery.startDiscovery({
     rpcPort: info.port,
     name: serverName,
-    tokenRequired: !!cfg.token
+    tokenRequired: !!cfg.token,
+    ocr: true
   });
   registerServerIpc();
   createServerTray(info, dir, serverName);
@@ -427,16 +519,18 @@ function registerIpc() {
   ipcMain.handle('system:get-config', wrap(() => {
     const cfg = config.load(configPath());
     const cfgExists = fs.existsSync(configPath());
+    const cloudActive = cfg.cloud && cfg.cloud.enabled && cfg.cloud.url;
     return {
-      mode: isServer ? 'server' : (cfg.serverUrl ? 'client' : (cfg.serverMode === 'server' ? 'server' : 'local')),
+      mode: isServer ? 'server' : (cloudActive ? 'cloud' : (cfg.serverUrl ? 'client' : (cfg.serverMode === 'server' ? 'server' : 'local'))),
       serverMode: isServer ? 'server' : cfg.serverMode,
       url: cfg.serverUrl || '',
       token: cfg.token || '',
+      cloud: { url: cfg.cloud.url || '', token: cfg.cloud.token || '', enabled: !!cfg.cloud.enabled },
       serverPort: cfg.serverPort,
       serverName: cfg.serverName || config.DEFAULT_NAME,
       dataDir: dataDir(),
       isServer,
-      firstRun: !cfgExists && !cfg.wizardDone && !cfg.serverUrl && cfg.serverMode !== 'server',
+      firstRun: !cfgExists && !cfg.wizardDone && !cfg.serverUrl && cfg.serverMode !== 'server' && !(cfg.cloud && cfg.cloud.enabled),
       lanIps: discovery.lanIps(),
       discoveryPort: discovery.DEFAULT_PORT
     };
@@ -480,6 +574,34 @@ function registerIpc() {
   ipcMain.handle('system:discover', wrap(async () => {
     const list = await discovery.discoverServers();
     return { list };
+  }));
+
+  ipcMain.handle('system:set-cloud', wrap((e, { url, token, enabled } = {}) => {
+    const clean = String(url || '').trim().replace(/\/+$/, '');
+    config.save(configPath(), { cloud: { url: clean, token: String(token || ''), enabled: !!enabled } });
+    return config.load(configPath());
+  }));
+
+  ipcMain.handle('system:test-cloud', wrap(async (e, { url } = {}) => {
+    const u = String(url || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(u)) throw new Error('La direccion debe comenzar con http:// o https://');
+    const resp = await fetch(u + '/api/ping', { signal: AbortSignal.timeout(6000) });
+    const text = await resp.text();
+    let j;
+    try { j = JSON.parse(text); }
+    catch (e) { throw new Error('El servidor respondio de forma invalida'); }
+    if (!resp.ok || !j.ok) throw new Error(j.error || 'El servidor no reconocio la solicitud');
+    return j;
+  }));
+
+  ipcMain.handle('auth:cloud-login', wrap(async (e, { username, password } = {}) => {
+    const cfg = config.load(configPath());
+    if (!cfg.cloud || !cfg.cloud.url) throw new Error('Configura primero la dirección del servidor cloud');
+    dbCloud.configure({ url: cfg.cloud.url, token: '' });
+    const result = await dbCloud.cloudLogin(String(username || '').trim(), String(password || ''));
+    config.save(configPath(), { cloud: { url: cfg.cloud.url, token: result.token, enabled: true } });
+    currentUser = result.user || currentUser;
+    return { user: currentUser, token: result.token };
   }));
 
   ipcMain.handle('system:wizard-done', wrap(() => {
@@ -623,6 +745,33 @@ function registerIpc() {
 
   ipcMain.handle('cedula:process', wrap(async (e, { path: filePath }) => {
     requireRole(['admin', 'editor']);
+    const cfg = config.load(configPath());
+    const cloudActive = !!(cfg.cloud && cfg.cloud.enabled && cfg.cloud.url);
+    // En modo cloud, la PC sube el PDF y el servidor en internet ejecuta el OCR.
+    if (cloudActive) {
+      try {
+        return await processCedulaCloud(filePath, cfg.cloud.url, cfg.cloud.token);
+      } catch (err) {
+        // Si el servidor cloud no expone aún el endpoint OCR, seguimos bajando
+        // de nivel (servidor LAN → local) en lugar de bloquear la carga.
+        if (err && err.code !== 'OCR_REMOTE_UNAVAILABLE') throw err;
+      }
+    }
+    // En modo cliente conectado a un servidor LAN que ofrece OCR remoto, delegamos
+    // el procesamiento al equipo servidor (p.ej. la PC de 64 bits donde el OCR
+    // funciona) en lugar de ejecutar el OCR localmente (frágil en 32 bits).
+    if (cfg.serverUrl) {
+      try {
+        return await processCedulaRemote(filePath, cfg.serverUrl, cfg.token);
+      } catch (err) {
+        // Si el servidor no expone el endpoint OCR (versión antigua), degradamos
+        // al OCR local para no bloquear la carga de la cédula.
+        if (err && err.code === 'OCR_REMOTE_UNAVAILABLE') {
+          return await processFile(filePath);
+        }
+        throw err;
+      }
+    }
     return await processFile(filePath);
   }));
 
@@ -721,7 +870,12 @@ function registerIpc() {
     }
     const pagosVacaciones = {};
     for (const pv of db.pagoVacaciones.listForPeriod(m, y)) pagosVacaciones[pv.employee_id] = pv;
-    return { m, y, empList, extras, incentivos, pagosVacaciones };
+    const deduccionesManuales = {};
+    for (const d of db.deduccionesManuales.listForPeriod(m, y)) {
+      if (!deduccionesManuales[d.employee_id]) deduccionesManuales[d.employee_id] = [];
+      deduccionesManuales[d.employee_id].push(d);
+    }
+    return { m, y, empList, extras, incentivos, pagosVacaciones, deduccionesManuales };
   }
 
   ipcMain.handle('nomina:calcular', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
@@ -732,8 +886,8 @@ function registerIpc() {
 
   ipcMain.handle('nomina:quincenal', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
     requireRole(['admin', 'editor']);
-    const { m, y, empList, extras, incentivos, pagosVacaciones } = nominaInputs(mes, anio, employee_id, departamento);
-    return nomina.calcNominaQuincenal(empList, m, y, extras, incentivos, pagosVacaciones);
+    const { m, y, empList, extras, incentivos, pagosVacaciones, deduccionesManuales } = nominaInputs(mes, anio, employee_id, departamento);
+    return nomina.calcNominaQuincenal(empList, m, y, extras, incentivos, pagosVacaciones, deduccionesManuales);
   }));
 
   ipcMain.handle('nomina:semanal', wrap((e, { mes, anio, employee_id, departamento } = {}) => {
@@ -833,6 +987,33 @@ function registerIpc() {
     return true;
   }));
 
+  ipcMain.handle('deducciones:list', wrap((e, { employee_id, mes, anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    if (employee_id) return db.deduccionesManuales.listForEmployee(employee_id, mes, anio);
+    return db.deduccionesManuales.listForPeriod(mes, anio);
+  }));
+
+  ipcMain.handle('deducciones:create', wrap((e, { data } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const created = db.deduccionesManuales.create(data, user.id);
+    db.audit.add(user, 'deducciones:create', `#${created.employee_id} ${created.mes}/${created.anio} Q${created.quincena} RD$ ${created.monto}`);
+    return created;
+  }));
+
+  ipcMain.handle('deducciones:update', wrap((e, { id, data } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const updated = db.deduccionesManuales.update(id, data);
+    db.audit.add(user, 'deducciones:update', `Deducción #${id}`);
+    return updated;
+  }));
+
+  ipcMain.handle('deducciones:delete', wrap((e, { id }) => {
+    const user = requireRole(['admin', 'editor']);
+    db.deduccionesManuales.delete(id);
+    db.audit.add(user, 'deducciones:delete', `Deducción #${id}`);
+    return true;
+  }));
+
   ipcMain.handle('nomina:liquidacion', wrap((e, { id, fecha_baja, opciones } = {}) => {
     requireRole(['admin', 'editor']);
     const rec = db.employees.get(id);
@@ -880,7 +1061,7 @@ function registerIpc() {
   ipcMain.handle('nomina:regalia', wrap((e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
     const actives = db.employees.list('', 'activo');
-    return nomina.calcRegalia(actives, anio);
+    return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio, db.salarioHistorial.listForEmployee);
   }));
 
   ipcMain.handle('export:excel', wrap(async (e, { filename, sheets } = {}) => {
@@ -1321,7 +1502,7 @@ app.whenReady().then(async () => {
   license.setStorePath(path.join(path.dirname(configPath()), 'kardex-license.json'));
   const cfg = config.load(configPath());
 
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => {
     console.log('[KARDEX] Update disponible:', info.version);
@@ -1345,6 +1526,9 @@ app.whenReady().then(async () => {
   });
   autoUpdater.on('error', (err) => {
     console.error('[KARDEX] Error en auto-updater:', err.message);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:error', { message: err.message });
+    }
   });
   if (process.argv.includes('--server') || cfg.serverMode === 'server' || process.env.KARDEX_SERVER_MODE === '1') {
     isServer = true;

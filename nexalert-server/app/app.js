@@ -1,5 +1,6 @@
 'use strict';
 (function () {
+  const API_BASE = 'https://nexalert.duckdns.org';
   const TOKEN_KEY = 'nexalert_token';
   const USER_KEY = 'nexalert_user';
   const THEME_KEY = 'nexalert_theme';
@@ -7,6 +8,8 @@
   const PRIO_LABEL = { baja: 'Baja', normal: 'Normal', alta: 'Alta', urgente: 'Urgente' };
   const EVENTO_LABEL = { estado: 'Cambio de estado', nota: 'Comentario', foto: 'Foto adjunta', foto_del: 'Foto eliminada', ubicacion: 'Ubicación registrada', creado: 'Reporte creado' };
   const NATIVO = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const BiometricAuth = NATIVO && window.Capacitor.Plugins.NativeBiometric ? window.Capacitor.Plugins.NativeBiometric : null;
+  const BIOMETRIC_SERVER = 'nexalert';
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
@@ -202,6 +205,7 @@
     actualizarBadgePendientes();
   }
 
+  const MAX_COLA_REINTENTOS = 24;
   async function processPendingQueue() {
     if (!navigator.onLine) return;
     const items = await idbGetAll('pending');
@@ -219,10 +223,23 @@
         } else if (item.tipo === 'nuevo_reporte') {
           await api('/api/reportes', { method: 'POST', body: JSON.stringify(item.payload) });
         } else if (item.tipo === 'estado_nota_foto') {
-          await api('/api/reportes/' + item.payload.id + '/estado', { method: 'POST', body: JSON.stringify(item.payload) });
+          const envio = { estado: item.payload.estado };
+          if (item.payload.solucion) envio.solucion = item.payload.solucion;
+          if (item.payload.enviar_grupo != null) envio.enviar_grupo = item.payload.enviar_grupo;
+          if (Array.isArray(item.payload.fotos) && item.payload.fotos.length) envio.fotos = item.payload.fotos;
+          if (item.payload.nota) envio.nota = item.payload.nota;
+          await api('/api/reportes/' + item.payload.id + '/estado', { method: 'POST', body: JSON.stringify(envio) });
         }
         await idbDelete('pending', item.ts);
-      } catch (e) { break; }
+      } catch (e) {
+        const fallos = (item.intentos || 0) + 1;
+        if (fallos >= MAX_COLA_REINTENTOS || (e.status >= 400 && e.status < 500)) {
+          await idbDelete('pending', item.ts);
+        } else {
+          item.intentos = fallos;
+          await idbPut('pending', item);
+        }
+      }
     }
     actualizarBadgePendientes();
   }
@@ -280,7 +297,7 @@
   }
 
   /* ========== ESTADO ========== */
-  let state = { reportes: [], detalle: null, timer: null, view: 'home', stats: null };
+  let state = { reportes: [], detalle: null, timer: null, view: 'home', stats: null, rol: 'tecnico', monitoreoData: null, monitoreoFiltro: '', gerenteDetalle: null, archRows: [], archBuscar: '' };
 
   function token() { return localStorage.getItem(TOKEN_KEY); }
   function usuario() { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch (e) { return null; } }
@@ -289,11 +306,15 @@
   async function api(path, options) {
     const headers = { 'Content-Type': 'application/json' };
     if (token()) headers.Authorization = 'Bearer ' + token();
-    const res = await fetch(path, { ...options, headers });
+    const res = await fetch(API_BASE + path, { ...options, headers });
     let data = {};
     try { data = await res.json(); } catch (e) { /* noop */ }
     if (res.status === 401 && token()) { cerrarSesion(); throw new Error('Sesion expirada'); }
-    if (!res.ok || data.ok === false) throw new Error(data.error || 'Error del servidor');
+    if (!res.ok || data.ok === false) {
+      const err = new Error(data.error || 'Error del servidor');
+      err.status = res.status;
+      throw err;
+    }
     return data;
   }
 
@@ -360,13 +381,54 @@
       try {
         const data = await api('/api/reportes');
         state.reportes = data.data || [];
+        const serverIds = new Set(state.reportes.map(r => r.id));
+        const allCached = await idbGetAll('reportes');
         for (const r of state.reportes) await idbPut('reportes', r);
+        for (const r of allCached) { if (!serverIds.has(r.id)) await idbDelete('reportes', r.id); }
         pintarLista();
         return;
       } catch (e) { /* fall to cache */ }
     }
     state.reportes = await idbGetAll('reportes');
     pintarLista();
+  }
+
+  /* ========== CARGAR TECNICOS (GERENTE) ========== */
+  async function cargarTecnicos() {
+    try {
+      const data = await api('/api/tecnicos');
+      state.tecnicos = (data.data || []).filter((t) => t.rol !== 'gerente' && t.activo !== 0);
+    } catch (e) { /* noop */ }
+  }
+
+  async function asignarDesdeLista(reporteId, selectEl) {
+    const tcId = selectEl.value ? Number(selectEl.value) : null;
+    const tcName = selectEl.value ? selectEl.options[selectEl.selectedIndex].text : '';
+    try {
+      await api('/api/reportes/' + reporteId + '/asignar', { method: 'POST', body: JSON.stringify({ tecnico_id: tcId, tecnico_nombre: tcName }) });
+      toast('Asignado a ' + (tcName || 'Sin asignar'), 'ok');
+      const rp = state.reportes.find((r) => r.id === reporteId);
+      if (rp) { rp.tecnico_id = tcId; rp.tecnico_nombre = tcName; }
+      pintarLista();
+      selectEl.closest('.asignar-wrap').classList.add('hidden');
+      if (tcId) {
+        const cliente = rp ? (rp.client_nombre || 'Cliente') : 'Cliente';
+        const equipo = rp ? (rp.equipo_nombre || '') : '';
+        const desc = rp ? (rp.descripcion || '') : '';
+        const msg = '\ud83d\udc77 *ASIGNACI\u00d3N DE T\u00c9CNICO*\n'
+          + '*Cliente:* ' + cliente + '\n'
+          + '*Reporte:* #' + reporteId + '\n'
+          + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+          + '*Problema:* ' + desc.slice(0, 120) + (desc.length > 120 ? '...' : '') + '\n'
+          + '*T\u00e9cnico asignado:* ' + tcName + '\n'
+          + '\u2014 NexAlert';
+        try {
+          const Share = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+          if (Share) await Share.share({ title: 'Asignaci\u00f3n #' + reporteId, text: msg, dialogTitle: 'Enviar asignaci\u00f3n' });
+          else if (navigator.share) await navigator.share({ title: 'Asignaci\u00f3n #' + reporteId, text: msg });
+        } catch (e) { /* usuario cancelo */ }
+      }
+    } catch (e) { toast(e.message, 'err'); }
   }
 
   /* ========== FILTROS ========== */
@@ -411,6 +473,8 @@
           ${r.lat != null ? '<span class="map-badge">' + ic('map') + '</span>' : ''}
           <span class="fecha">${fechaLarga(r.fecha)}</span>
         </div>
+        ${state.rol === 'gerente' && state.tecnicos && state.tecnicos.length ? '<div class="asignar-wrap hidden" data-asignar-for="' + r.id + '"><select class="asignar-select" data-report-id="' + r.id + '"><option value="">Sin asignar</option>' + state.tecnicos.map((t) => '<option value="' + t.id + '"' + (Number(r.tecnico_id) === t.id ? ' selected' : '') + '>' + esc(t.nombre) + '</option>').join('') + '</select><button class="asignar-ok" data-report-id="' + r.id + '">OK</button><button class="asignar-cancel" data-report-id="' + r.id + '">X</button></div>' : ''}
+        ${state.rol === 'gerente' ? '<div class="asignar-btn-wrap"><button class="asignar-btn" data-report-id="' + r.id + '">' + (r.tecnico_id ? '👷 ' + esc(r.tecnico_nombre || 'Cambiar') : '👷 Asignar') + '</button><button class="card-del-btn" data-del-id="' + r.id + '" title="Eliminar">🗑️</button></div>' : ''}
       </div>`).join('');
   }
 
@@ -424,6 +488,7 @@
         pintarDetalle();
         $('#home').classList.add('hidden');
         $('#dashboard-section').classList.add('hidden');
+        $('#monitoreo-section').classList.add('hidden');
         $('#detalle').classList.remove('hidden');
         state.view = 'detalle';
         window.scrollTo(0, 0);
@@ -438,6 +503,7 @@
     pintarDetalle();
     $('#home').classList.add('hidden');
     $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
     $('#detalle').classList.remove('hidden');
     state.view = 'detalle';
     window.scrollTo(0, 0);
@@ -483,12 +549,14 @@
           <div id="foto-progress" class="foto-progress hidden"></div>
         </div>
         <div class="det-actions-row">
+          <button id="btn-share-rep" class="btn-sm btn-outline">Compartir</button>
           ${!tieneUbicacion ? '<button id="btn-ubicacion" class="btn-sm btn-outline">' + ic('map') + ' Registrar ubicacion</button>' : ''}
           <button id="btn-historial" class="btn-sm btn-outline">${ic('history')} Historial</button>
         </div>
       </div>
       <div class="estado-actions">
-        ${['abierto', 'en_proceso', 'espera_repuesto', 'espera_cliente', 'resuelto'].map((e) => `
+        ${r.estado === 'resuelto' ? '<div class="estado-bloqueado">🔒 Resuelto — Solo el gerente puede cambiar el estado</div>' :
+        ['abierto', 'en_proceso', 'espera_repuesto', 'espera_cliente', 'resuelto'].map((e) => `
           <button class="estado-btn ${r.estado === e ? 'activo' : ''}" data-estado="${e}">${esc(ESTADO_LABEL[e])}</button>`).join('')}
       </div>
       ${r.estado !== 'resuelto' ? '' : `
@@ -519,6 +587,8 @@
     $$('.estado-btn').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.estado === 'espera_repuesto' || b.dataset.estado === 'espera_cliente') {
         abrirEsperaModal(r.id, b.dataset.estado, b);
+      } else if (b.dataset.estado === 'resuelto') {
+        abrirResolverModal(r.id, b);
       } else {
         cambiarEstado(r.id, b.dataset.estado, b);
       }
@@ -533,6 +603,9 @@
 
     const btnHistorial = $('#btn-historial');
     if (btnHistorial) btnHistorial.addEventListener('click', toggleHistorial);
+
+    const btnShare = $('#btn-share-rep');
+    if (btnShare) btnShare.addEventListener('click', () => compartirReporte(r));
 
     if (r.estado === 'resuelto') initFirma();
     actualizarProgresoFotos();
@@ -578,39 +651,44 @@
   function tomarFoto() { $('#in-foto-cam').click(); }
   function elegirFoto() { $('#in-foto-gal').click(); }
 
-  function procesarYEnviar(files) {
-    const f = files && files[0];
-    if (!f) return;
-    procesarImagen(f).then((dataUrl) => {
-      const comma = dataUrl.indexOf(',');
-      const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-      const nombre = 'tel_' + Date.now() + '.jpg';
-      if (navigator.onLine) {
-        enviarFotoDirecto(base64, nombre);
-      } else {
-        enqueueFoto(state.detalle.id, base64, nombre);
-        toast('Foto en cola (sin conexion).', 'ok');
-      }
-    }).catch((e) => toast(e.message, 'err'));
-  }
-
-  async function enviarFotoDirecto(base64, nombre) {
+  async function procesarYEnviar(files) {
+    if (!files || !files.length) return;
     const btn = $('#btn-foto-cam') || $('#btn-foto-gal');
     const txt = btn && btn.innerHTML;
     if (btn) btn.disabled = true;
+    let ok = 0, fail = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        const dataUrl = await procesarImagen(f);
+        const comma = dataUrl.indexOf(',');
+        const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+        const nombre = 'tel_' + Date.now() + '_' + i + '.jpg';
+        if (navigator.onLine) {
+          await enviarFotoDirecto(base64, nombre);
+        } else {
+          await enqueueFoto(state.detalle.id, base64, nombre);
+        }
+        ok++;
+      } catch (e) { fail++; }
+    }
+    if (btn) { btn.disabled = false; if (txt) btn.innerHTML = txt; }
+    await abrirDetalle(state.detalle.id);
+    if (files.length > 1) toast(ok + ' fotos adjuntadas' + (fail ? ', ' + fail + ' fallidas' : ''), ok > 0 ? 'ok' : 'err');
+    else if (ok === 1) toast('Foto adjuntada.', 'ok');
+  }
+
+  async function enviarFotoDirecto(base64, nombre) {
     try {
       await api('/api/reportes/' + state.detalle.id + '/fotos', {
         method: 'POST',
         body: JSON.stringify({ nombre, tipo: 'image/jpeg', datos: base64 })
       });
-      toast('Foto adjuntada.', 'ok');
       await abrirDetalle(state.detalle.id);
       cargarReportes().catch(() => {});
     } catch (e) {
       enqueueFoto(state.detalle.id, base64, nombre);
-      toast('Error subiendo, en cola.', 'err');
-    } finally {
-      if (btn) { btn.disabled = false; if (txt) btn.innerHTML = txt; }
+      throw e;
     }
   }
 
@@ -637,23 +715,66 @@
     });
   }
 
-  /* ========== ESPERA MODAL ========== */
-  let esperaState = { reporteId: null, estado: null, btn: null, fotoFile: null, fotoBase64: null, fotoNombre: null };
+  /* ========== COMPARTIR REPORTE ========== */
+  async function compartirReporte(r) {
+    const cliente = r.client_nombre || r.cliente || 'Cliente';
+    const equipo = r.equipo_nombre || r.equipo || '';
+    const desc = r.descripcion || r.desc || '';
+    const prio = r.prioridad || r.prio || 'normal';
+    const prioLabel = PRIO_LABEL[prio] || prio;
+    const fecha = r.fecha || new Date().toLocaleDateString('es-ES');
+    const msg = '\uD83D\uDEA8 *REPORTE DE FALLA*\n'
+      + '*Cliente:* ' + cliente + '\n'
+      + '*Prioridad:* ' + prioLabel + '\n'
+      + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+      + '*Fecha:* ' + fecha + '\n'
+      + '*Problema:*\n' + desc + '\n'
+      + '\u2014 NexAlert';
+    try {
+      const Share = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+      if (Share) {
+        await Share.share({ title: 'Reporte #' + r.id, text: msg, dialogTitle: 'Compartir reporte' });
+      } else if (navigator.share) {
+        await navigator.share({ title: 'Reporte #' + r.id, text: msg });
+      } else {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(msg);
+          toast('Reporte copiado al portapapeles', 'ok');
+        }
+      }
+    } catch (e) { /* usuario cancelo */ }
+  }
+
+/* ========== ESPERA MODAL ========== */
+  let esperaState = { reporteId: null, estado: null, btn: null, fotos: [] };
+
+  const MAX_ESP_FOTOS = 6;
 
   function abrirEsperaModal(reporteId, estado, btn) {
     const savedScroll = window.scrollY || 0;
     const view = document.getElementById('view');
     const savedViewScroll = view ? view.scrollTop : 0;
-    esperaState = { reporteId, estado, btn, fotoFile: null, fotoBase64: null, fotoNombre: null };
+    esperaState = { reporteId, estado, btn, fotos: [] };
     $('#esp-nota').value = '';
-    $('#esp-foto-preview').classList.add('hidden');
-    $('#esp-foto-preview').src = '';
-    $('#esp-foto-nombre').textContent = '';
+    $('#esp-foto-list').innerHTML = '';
+    $('#esp-enviar-grupo').checked = true;
     $('#esp-submit').disabled = false;
     $('#espera-modal').classList.remove('hidden');
     $('#top-dropdown').classList.add('hidden');
+
+    if (estado) {
+      $('#espera-sub').classList.add('hidden');
+      $('#espera-form').classList.remove('hidden');
+      $('#espera-titulo').textContent = ESTADO_LABEL[estado] || 'En espera';
+      $('#espera-hint-text').textContent = estado === 'espera_repuesto' ? 'Describe la pieza que se necesita.' : 'Describe el motivo de espera del cliente.';
+    } else {
+      $('#espera-sub').classList.remove('hidden');
+      $('#espera-form').classList.add('hidden');
+      $('#espera-titulo').textContent = 'En espera';
+    }
+
     setTimeout(() => {
-      $('#esp-nota').focus();
+      if (estado) $('#esp-nota').focus();
       setTimeout(() => {
         window.scrollTo(0, savedScroll);
         if (view) view.scrollTop = savedViewScroll;
@@ -661,42 +782,89 @@
     }, 50);
   }
 
+  function seleccionarEsperaSub(estado) {
+    esperaState.estado = estado;
+    $('#espera-sub').classList.add('hidden');
+    $('#espera-form').classList.remove('hidden');
+    $('#espera-titulo').textContent = ESTADO_LABEL[estado] || 'En espera';
+    $('#espera-hint-text').textContent = estado === 'espera_repuesto' ? 'Describe la pieza que se necesita.' : 'Describe el motivo de espera del cliente.';
+    setTimeout(() => $('#esp-nota').focus(), 100);
+  }
+
   function cerrarEsperaModal() {
     $('#espera-modal').classList.add('hidden');
-    esperaState = { reporteId: null, estado: null, btn: null, fotoFile: null, fotoBase64: null, fotoNombre: null };
+    esperaState = { reporteId: null, estado: null, btn: null, fotos: [] };
+  }
+
+  function renderEsperaFotos() {
+    const cont = $('#esp-foto-list');
+    cont.innerHTML = '';
+    esperaState.fotos.forEach((f, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'esp-foto-thumb';
+      wrap.onclick = () => {
+        esperaState.fotos.splice(i, 1);
+        renderEsperaFotos();
+      };
+      const img = document.createElement('img');
+      img.src = f.dataUrl;
+      const x = document.createElement('span');
+      x.className = 'esp-foto-x';
+      x.textContent = '✕';
+      wrap.appendChild(img);
+      wrap.appendChild(x);
+      cont.appendChild(wrap);
+    });
   }
 
   async function confirmarEspera() {
     const nota = $('#esp-nota').value.trim();
-    const { reporteId, estado, btn, fotoBase64, fotoNombre } = esperaState;
-    if (!nota && !fotoBase64) { toast('Escribe una nota o adjunta una foto.', 'err'); return; }
+    const { reporteId, estado, btn, fotos } = esperaState;
+    const enviarGrupo = document.getElementById('esp-enviar-grupo').checked ? 1 : 0;
+    if (!nota && !fotos.length) { toast('Escribe una nota o adjunta una foto.', 'err'); return; }
     $('#esp-submit').disabled = true;
-    const payload = { estado };
+    const payload = { estado, enviar_grupo: enviarGrupo };
     if (nota) payload.nota = nota;
-    if (fotoBase64 && fotoNombre) {
-      payload.foto = { nombre: fotoNombre, tipo: 'image/jpeg', datos: fotoBase64 };
+    if (fotos.length) {
+      payload.fotos = fotos.slice(0, MAX_ESP_FOTOS).map((f) => ({ nombre: f.nombre, tipo: 'image/jpeg', datos: f.base64 }));
     }
+    const isGerente = state.view === 'monitoreo-detalle';
     if (!navigator.onLine) {
       await enqueuePending('estado_nota_foto', { id: reporteId, ...payload });
-      if (state.detalle && state.detalle.id === reporteId) state.detalle.estado = estado;
-      pintarDetalle();
-      actualizarListaDesdeDetalle();
+      if (isGerente) {
+        if (state.gerenteDetalle) state.gerenteDetalle.estado = estado;
+        pintarDetalleGerente();
+      } else {
+        if (state.detalle && state.detalle.id === reporteId) state.detalle.estado = estado;
+        pintarDetalle();
+        actualizarListaDesdeDetalle();
+      }
       toast('Guardado localmente.', 'ok');
       cerrarEsperaModal();
       return;
     }
     try {
       const r = await api('/api/reportes/' + reporteId + '/estado', { method: 'POST', body: JSON.stringify(payload) });
-      state.detalle = { ...state.detalle, ...r.data };
-      await idbPut('reportes', state.detalle);
-      pintarDetalle();
-      actualizarListaDesdeDetalle();
+      if (isGerente) {
+        if (state.gerenteDetalle) state.gerenteDetalle.estado = estado;
+        pintarDetalleGerente();
+      } else {
+        state.detalle = { ...state.detalle, ...r.data };
+        await idbPut('reportes', state.detalle);
+        pintarDetalle();
+        actualizarListaDesdeDetalle();
+      }
       toast('Estado actualizado.', 'ok');
       cerrarEsperaModal();
     } catch (e) {
       await enqueuePending('estado_nota_foto', { id: reporteId, ...payload });
-      state.detalle.estado = estado;
-      pintarDetalle();
+      if (isGerente) {
+        if (state.gerenteDetalle) state.gerenteDetalle.estado = estado;
+        pintarDetalleGerente();
+      } else {
+        state.detalle.estado = estado;
+        pintarDetalle();
+      }
       toast('Guardado localmente.', 'ok');
       cerrarEsperaModal();
     }
@@ -715,24 +883,74 @@
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = true;
     input.onchange = (ev) => procesarEsperaFoto(ev.target.files);
     input.click();
   }
 
   async function procesarEsperaFoto(files) {
-    if (!files || !files[0]) return;
-    const file = files[0];
-    if (file.size > 8 * 1024 * 1024) { toast('La foto supera 8 MB', 'err'); return; }
-    const ext = file.name.split('.').pop() || 'jpg';
-    const nombre = 'esp_' + Date.now() + '.' + ext;
-    esperaState.fotoFile = file;
-    esperaState.fotoNombre = nombre;
-    const b64 = await procesarImagen(file);
-    esperaState.fotoBase64 = b64;
-    const preview = $('#esp-foto-preview');
-    preview.src = b64;
-    preview.classList.remove('hidden');
-    $('#esp-foto-nombre').textContent = file.name;
+    if (!files || !files.length) return;
+    const faltan = MAX_ESP_FOTOS - esperaState.fotos.length;
+    const lista = Array.from(files).slice(0, faltan);
+    for (const file of lista) {
+      if (file.size > 8 * 1024 * 1024) { toast('Un archivo supera 8 MB', 'err'); continue; }
+      const ext = file.name.split('.').pop() || 'jpg';
+      const nombre = 'esp_' + Date.now() + '_' + Math.floor(Math.random() * 1000) + '.' + ext;
+      const dataUrl = await procesarImagen(file);
+      const comma = dataUrl.indexOf(',');
+      const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+      esperaState.fotos.push({ nombre, base64, dataUrl });
+      if (esperaState.fotos.length >= MAX_ESP_FOTOS) break;
+    }
+    if (esperaState.fotos.length >= MAX_ESP_FOTOS) toast('Maximo ' + MAX_ESP_FOTOS + ' fotos.', 'err');
+    renderEsperaFotos();
+  }
+
+  /* ========== RESOLVER MODAL ========== */
+  let resolverState = { reporteId: null, btn: null };
+
+  function abrirResolverModal(reporteId, btn) {
+    resolverState = { reporteId, btn };
+    $('#resolver-nota').value = '';
+    $('#resolver-submit').disabled = false;
+    $('#resolver-modal').classList.remove('hidden');
+    $('#top-dropdown').classList.add('hidden');
+    setTimeout(() => $('#resolver-nota').focus(), 100);
+  }
+
+  function cerrarResolverModal() {
+    $('#resolver-modal').classList.add('hidden');
+    if (resolverState.btn) resolverState.btn.disabled = false;
+    resolverState = { reporteId: null, btn: null };
+  }
+
+  async function confirmarResolver() {
+    const solucion = $('#resolver-nota').value.trim();
+    const { reporteId, btn } = resolverState;
+    if (!solucion) { toast('Escribe la solucion aplicada.', 'err'); return; }
+    $('#resolver-submit').disabled = true;
+    const isGerente = state.view === 'monitoreo-detalle';
+    if (!navigator.onLine) {
+      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', solucion });
+      if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
+      else { if (state.detalle && state.detalle.id === reporteId) state.detalle.estado = 'resuelto'; pintarDetalle(); actualizarListaDesdeDetalle(); }
+      toast('Guardado localmente.', 'ok');
+      cerrarResolverModal();
+      return;
+    }
+    try {
+      const r = await api('/api/reportes/' + reporteId + '/estado', { method: 'POST', body: JSON.stringify({ estado: 'resuelto', solucion }) });
+      if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
+      else { state.detalle = { ...state.detalle, ...r.data }; await idbPut('reportes', state.detalle); pintarDetalle(); actualizarListaDesdeDetalle(); }
+      toast('Reporte resuelto.', 'ok');
+      cerrarResolverModal();
+    } catch (e) {
+      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', solucion });
+      if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
+      else { state.detalle.estado = 'resuelto'; pintarDetalle(); }
+      toast('Guardado localmente.', 'ok');
+      cerrarResolverModal();
+    }
   }
 
   /* ========== ESTADO ========== */
@@ -943,19 +1161,360 @@
     }
   }
 
+  /* ========== ARCHIVADOS ========== */
+  async function abrirArchivados() {
+    $('#home').classList.add('hidden');
+    $('#detalle').classList.add('hidden');
+    $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
+    $('#archivados-section').classList.remove('hidden');
+    state.view = 'archivados';
+    state.archBuscar = '';
+    window.scrollTo(0, 0);
+    const sec = $('#archivados-section');
+    sec.innerHTML = '<div class="cargando">Cargando archivados...</div>';
+    if (!navigator.onLine) {
+      sec.innerHTML = '<div class="vacio"><p>Sin conexion.</p></div>';
+      return;
+    }
+    try {
+      await api('/api/reportes/auto-archive', { method: 'POST' }).catch(() => {});
+      const res = await api('/api/reportes/archived');
+      state.archRows = res.data || [];
+      sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados (<span id="arch-count">0</span>)</h2></div>'
+        + '<div class="arch-buscar-wrap"><input id="arch-buscar" type="search" placeholder="Buscar cliente, equipo, problema..." value="' + esc(state.archBuscar || '') + '"></div>'
+        + '<div id="arch-lista"></div>';
+      $('#btn-arch-back').addEventListener('click', irInicio);
+      const busc = $('#arch-buscar');
+      if (busc) busc.addEventListener('input', () => { state.archBuscar = busc.value; pintarArchivados(); });
+      pintarArchivados();
+    } catch (e) {
+      sec.innerHTML = '<div class="vacio"><p>Error: ' + esc(e.message) + '</p></div>';
+    }
+  }
+
+  function pintarArchivados() {
+    const lista = $('#arch-lista');
+    if (!lista) return;
+    const rows = state.archRows || [];
+    const q = (state.archBuscar || '').trim().toLowerCase();
+    const filtradas = q ? rows.filter((r) => {
+      const s = ((r.client_nombre || '') + ' ' + (r.equipo_nombre || '') + ' ' + (r.descripcion || '') + ' ' + (r.tecnico_nombre || '') + ' ' + r.id).toLowerCase();
+      return s.indexOf(q) >= 0;
+    }) : rows;
+    const cont = $('#arch-count');
+    if (cont) cont.textContent = filtradas.length;
+    if (!filtradas.length) {
+      lista.innerHTML = '<div class="vacio"><p>No hay reportes archivados que coincidan.</p></div>';
+      return;
+    }
+    lista.innerHTML = filtradas.map((r) => {
+      const eqTxt = r.equipo_nombre || 'Equipo';
+      return '<div class="rp-card" data-id="' + r.id + '" data-goto="arch-detalle">'
+        + '<div class="head"><div class="cliente">' + esc(r.client_nombre || 'Cliente') + '</div>' + badgeEstado(r.estado) + '</div>'
+        + '<div class="equipo">' + esc(eqTxt) + '</div>'
+        + '<div class="descripcion">' + esc(r.descripcion || '') + '</div>'
+        + '<div class="meta"><span class="tecnico-asignado">' + (r.tecnico_nombre ? '\ud83d\udc77 ' + esc(r.tecnico_nombre) : '') + '</span> <span class="fecha">Resuelto: ' + fechaLarga(r.resuelto_at || r.fecha) + '</span></div>'
+        + '</div>';
+    }).join('');
+    lista.querySelectorAll('.rp-card[data-goto="arch-detalle"]').forEach((el) => el.addEventListener('click', () => {
+      abrirDetalle(Number(el.dataset.id));
+    }));
+  }
+
+  /* ========== MONITOREO (GERENTE) ========== */
+  async function abrirMonitoreo() {
+    $('#home').classList.add('hidden');
+    $('#detalle').classList.add('hidden');
+    $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.remove('hidden');
+    state.view = 'monitoreo';
+    window.scrollTo(0, 0);
+    const sec = $('#monitoreo-section');
+    sec.innerHTML = '<div class="cargando">Cargando datos de monitoreo...</div>';
+    if (!navigator.onLine) {
+      sec.innerHTML = '<div class="vacio"><p>Sin conexion para cargar datos.</p></div>';
+      return;
+    }
+    try {
+      const [tecRes, repRes, statsRes] = await Promise.all([
+        api('/api/tecnicos'),
+        api('/api/reportes/all'),
+        api('/api/stats/global')
+      ]);
+      state.monitoreoData = { tecnicos: tecRes.data || [], reportes: repRes.data || [], stats: statsRes.data || {} };
+      pintarMonitoreo();
+    } catch (e) {
+      sec.innerHTML = '<div class="vacio"><p>Error: ' + esc(e.message) + '</p></div>';
+    }
+  }
+
+  function pintarMonitoreo() {
+    const sec = $('#monitoreo-section');
+    const d = state.monitoreoData;
+    if (!d) return;
+    const stats = d.stats || {};
+    const tecnicos = d.tecnicos || [];
+    const reportes = d.reportes || [];
+    const filtro = state.monitoreoFiltro || '';
+    let filtered = reportes;
+    if (filtro) filtered = reportes.filter((r) => {
+      if (filtro === 'sin_asignar') return !r.tecnico_id;
+      return r.tecnico_id && String(r.tecnico_id) === filtro;
+    });
+    const total = stats.total || 0;
+    const abiertos = (stats.porEstado || {}).abierto || 0;
+    const proceso = (stats.porEstado || {}).en_proceso || 0;
+    const resueltos = (stats.porEstado || {}).resuelto || 0;
+    const espera = ((stats.porEstado || {}).espera_repuesto || 0) + ((stats.porEstado || {}).espera_cliente || 0);
+    const sinAsig = reportes.filter((r) => !r.tecnico_id).length;
+    const tcRows = tecnicos.map((t) => `<div class="mon-tec-row ${filtro === String(t.id) ? 'active' : ''}" data-tcid="${t.id}"><span class="mon-tec-nombre">${esc(t.nombre)} ${t.rol === 'gerente' ? '<span class="badge prio-alta">Gerente</span>' : ''}</span><span class="mon-tec-stats">${t.total || 0} total \u00b7 <b>${t.pendientes || 0} activos</b></span>${t.rol !== 'gerente' ? '<button class="mon-tec-del" data-tc-id="' + t.id + '" data-tc-nombre="' + esc(t.nombre) + '" title="Desactivar">\u2715</button>' : ''}</div>`).join('');
+    const rpRows = filtered.slice(0, 50).map((r) => `<div class="rp-card" data-id="${r.id}" data-goto="monitoreo-detalle"><div class="head"><div class="cliente">${esc(r.client_nombre || 'Cliente')}</div>${badgeEstado(r.estado)}</div><div class="equipo">${esc(r.equipo_nombre || 'Equipo no especificado')}</div><div class="descripcion">${esc(r.descripcion)}</div><div class="meta">${badgePrio(r.prioridad || 'normal')} <span class="tecnico-asignado">${r.tecnico_id ? '\ud83d\udc77 ' + esc(r.tecnico_nombre || '') : '\ud83d\udc77 Sin asignar'}</span> <span class="fecha">${fechaLarga(r.fecha)}</span></div></div>`).join('');
+
+    sec.innerHTML = '<div class="mon-head"><button id="btn-mon-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Monitoreo</h2><button id="btn-mon-refresh" class="back-btn" style="margin-left:auto"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Actualizar</button></div>'
+      + '<div class="mon-resumen"><div class="dash-grid">'
+      + '<div class="dash-card accent"><div class="dash-num">' + total + '</div><div class="dash-lbl">Total</div></div>'
+      + '<div class="dash-card red"><div class="dash-num">' + abiertos + '</div><div class="dash-lbl">Abiertos</div></div>'
+      + '<div class="dash-card blue"><div class="dash-num">' + proceso + '</div><div class="dash-lbl">En proceso</div></div>'
+      + '<div class="dash-card green"><div class="dash-num">' + resueltos + '</div><div class="dash-lbl">Resueltos</div></div>'
+      + '<div class="dash-card amber"><div class="dash-num">' + espera + '</div><div class="dash-lbl">En espera</div></div>'
+      + '<div class="dash-card red"><div class="dash-num">' + sinAsig + '</div><div class="dash-lbl">Sin asignar</div></div>'
+      + '</div></div>'
+      + '<div class="mon-section"><h3>Tecnicos (' + tecnicos.length + ')</h3>'
+      + '<div class="mon-filtros">'
+      + '<div class="mon-tec-row ' + (!filtro ? 'active' : '') + '" data-tcid="">Todos (' + total + ')</div>'
+      + '<div class="mon-tec-row ' + (filtro === 'sin_asignar' ? 'active' : '') + '" data-tcid="sin_asignar">Sin asignar (' + sinAsig + ')</div>'
+      + tcRows
+      + '</div></div>'
+      + '<div class="mon-section"><h3>Reportes (' + filtered.length + ')</h3>'
+      + '<div id="mon-lista">' + (rpRows || '<div class="vacio"><p>No hay reportes.</p></div>') + '</div></div>';
+
+    $('#btn-mon-back').addEventListener('click', irInicio);
+    $('#btn-mon-refresh').addEventListener('click', () => abrirMonitoreo());
+    sec.querySelectorAll('.mon-tec-row[data-tcid]').forEach((el) => el.addEventListener('click', () => {
+      state.monitoreoFiltro = el.dataset.tcid || '';
+      pintarMonitoreo();
+    }));
+    sec.querySelectorAll('.rp-card[data-goto="monitoreo-detalle"]').forEach((el) => el.addEventListener('click', () => {
+      abrirMonitoreoDetalle(Number(el.dataset.id));
+    }));
+    sec.querySelectorAll('.mon-tec-del').forEach((el) => el.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const tcId = Number(el.dataset.tcId);
+      const tcNombre = el.dataset.tcNombre;
+      const ok = await confirmAsync('Desactivar tecnico', 'Desactivar al tecnico "' + tcNombre + '"? No podra usar la app.');
+      if (!ok) return;
+      try {
+        await api('/api/tecnicos/' + tcId + '/desactivar', { method: 'POST' });
+        toast('Tecnico desactivado', 'ok');
+        abrirMonitoreo();
+      } catch (e) { toast(e.message, 'err'); }
+    }));
+  }
+
+  async function abrirMonitoreoDetalle(id) {
+    $('#home').classList.add('hidden');
+    $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
+    $('#detalle').classList.remove('hidden');
+    state.view = 'monitoreo-detalle';
+    window.scrollTo(0, 0);
+    const cont = $('#detalle-contenido');
+    cont.innerHTML = '<div class="cargando">Cargando reporte...</div>';
+    try {
+      const data = await api('/api/reportes/' + id);
+      state.gerenteDetalle = data.data;
+      pintarDetalleGerente();
+    } catch (e) {
+      cont.innerHTML = '<div class="vacio"><p>Error: ' + esc(e.message) + '</p></div>';
+    }
+  }
+
+  function pintarDetalleGerente() {
+    const r = state.gerenteDetalle;
+    if (!r) return;
+    const notas = r.notas || [];
+    const fotos = r.fotos || [];
+    const tecnicos = (state.monitoreoData && state.monitoreoData.tecnicos) || [];
+    const ti = r.lat != null && r.lng != null;
+    const cont = $('#detalle-contenido');
+    const isEspera = r.estado === 'espera_repuesto' || r.estado === 'espera_cliente';
+
+    cont.innerHTML = '<div class="det-head"><div class="det-top"><div>'
+      + '<div class="cliente">' + esc(r.client_nombre || 'Cliente') + '</div>'
+      + '<div class="equipo">' + esc(r.equipo_nombre || 'Equipo no especificado') + '</div>'
+      + '</div><div class="det-badges">' + badgeEstado(r.estado) + badgePrio(r.prioridad || 'normal') + '</div></div>'
+      + (r.fecha ? '<div class="det-row"><label>Fecha</label><div class="valor">' + fechaLarga(r.fecha) + '</div></div>' : '')
+      + '<div class="det-row"><label>Problema</label><div class="valor">' + esc(r.descripcion) + '</div></div>'
+      + (r.solucion ? '<div class="det-row"><label>Solucion</label><div class="valor">' + esc(r.solucion) + '</div></div>' : '')
+      + (ti ? '<div class="det-row"><label>Ubicacion</label><div class="valor"><a class="map-link" href="https://www.google.com/maps?q=' + r.lat + ',' + r.lng + '" target="_blank">' + ic('map') + ' Maps</a></div></div>' : '')
+      + (r.tecnico_nombre ? '<div class="det-row"><label>Tecnico</label><div class="valor">' + esc(r.tecnico_nombre) + '</div></div>' : '')
+      + (fotos.length ? '<div class="det-row"><label>Evidencia (' + fotos.length + ')</label><div class="fotos-grid">' + fotos.map((f) => '<div class="foto-item" data-src="data:' + esc(f.tipo || 'image/jpeg') + ';base64,' + f.datos + '" data-nombre="' + esc(f.nombre) + '"><img src="data:' + esc(f.tipo || 'image/jpeg') + ';base64,' + f.datos + '" alt="foto" loading="lazy"></div>').join('') + '</div></div>' : '')
+      + '</div>';
+
+    cont.innerHTML += '<div class="gerente-asignar"><h3>Reasignar</h3><div class="gerente-asignar-row">'
+      + '<select id="ger-tecnico"><option value="">Sin asignar</option>'
+      + tecnicos.filter((t) => t.rol !== 'gerente').map((t) => '<option value="' + t.id + '"' + (Number(r.tecnico_id) === t.id ? ' selected' : '') + '>' + esc(t.nombre) + '</option>').join('')
+      + '</select><button id="btn-ger-asignar" class="btn-sm btn-primary">Asignar</button></div></div>';
+
+    cont.innerHTML += '<div class="estado-actions">'
+      + ['abierto', 'en_proceso'].map((e) => '<button class="estado-btn' + (r.estado === e ? ' activo' : '') + '" data-estado="' + e + '">' + esc(ESTADO_LABEL[e]) + '</button>').join('')
+      + '<button class="estado-btn' + (isEspera ? ' activo' : '') + '" id="btn-ger-espera">' + (isEspera ? ESTADO_LABEL[r.estado] : 'En espera') + '</button>'
+      + '<button class="estado-btn' + (r.estado === 'resuelto' ? ' activo' : '') + '" data-estado="resuelto">' + esc(ESTADO_LABEL['resuelto']) + '</button>'
+      + '</div>';
+
+    cont.innerHTML += '<div class="gerente-actions-extra"><button id="btn-ger-share" class="btn-sm btn-outline">Compartir WhatsApp</button><button id="btn-ger-historial" class="btn-sm btn-outline">Historial</button>'
+      + '<button id="btn-ger-borrar" class="btn-sm btn-danger">Eliminar reporte</button></div>';
+
+    cont.innerHTML += '<div id="historial-gerente" class="historial-section hidden"><h3>Historial</h3><div id="historial-gerente-lista"><p class="hint">Cargando...</p></div></div>';
+
+    cont.innerHTML += '<div class="notas"><h3>Comentarios (' + notas.length + ')</h3>'
+      + (notas.length ? notas.map((n) => '<div class="nota"><div class="n-texto">' + esc(n.texto) + '</div><div class="n-meta">' + esc(n.autor || 'Tecnico') + ' \u00b7 ' + fechaHoraLarga(n.creado) + '</div></div>').join('') : '<p class="hint">Sin comentarios.</p>')
+      + '</div><div class="nueva-nota"><textarea id="in-nota-ger" placeholder="Escribe un comentario..."></textarea>'
+      + '<button id="btn-enviar-nota-ger" class="btn-primary">Enviar</button></div>';
+
+    $$('.estado-btn[data-estado]').forEach((b) => b.addEventListener('click', async () => {
+      const estado = b.dataset.estado;
+      if (estado === 'resuelto') {
+        abrirResolverModal(r.id, b);
+        return;
+      }
+      const label = ESTADO_LABEL[estado];
+      const ok = await confirmAsync('Cambiar estado', 'Cambiar a "' + label + '"?');
+      if (!ok) return;
+      await cambiarEstadoGerente(r.id, estado);
+    }));
+
+    const btnEspera = $('#btn-ger-espera');
+    if (btnEspera) btnEspera.addEventListener('click', () => {
+      abrirEsperaModal(r.id, null, btnEspera);
+    });
+
+    $('#btn-enviar-nota-ger').addEventListener('click', () => enviarNotaGerente(r.id));
+    $('#btn-ger-asignar').addEventListener('click', () => reasignarReporte(r.id));
+    $$('.foto-item').forEach((el) => el.addEventListener('click', () => verFotoGrande(el.dataset.src, el.dataset.nombre)));
+
+    $('#btn-ger-share').addEventListener('click', () => compartirReporte(r));
+    $('#btn-ger-historial').addEventListener('click', async () => {
+      const sec = $('#historial-gerente');
+      sec.classList.toggle('hidden');
+      if (!sec.classList.contains('hidden')) {
+        try {
+          const data = await api('/api/reportes/' + r.id + '/historial');
+          const eventos = data.data || [];
+          const lista = $('#historial-gerente-lista');
+          if (!eventos.length) { lista.innerHTML = '<p class="hint">Sin eventos.</p>'; return; }
+          lista.innerHTML = eventos.map((ev) => '<div class="nota"><div class="n-texto">' + formatearEvento(ev) + '</div><div class="n-meta">' + esc(ev.autor || 'Sistema') + ' \u00b7 ' + fechaHoraLarga(ev.creado) + '</div></div>').join('');
+        } catch (e) {
+          $('#historial-gerente-lista').innerHTML = '<p class="hint">Error al cargar.</p>';
+        }
+      }
+    });
+
+    $('#btn-ger-borrar').addEventListener('click', async () => {
+      const ok = await confirmAsync('Eliminar reporte', 'Seguro que quieres eliminar el reporte de "' + esc(r.client_nombre || 'Cliente') + '"? Esta accion no se puede deshacer.');
+      if (!ok) return;
+      try {
+        await api('/api/reportes/' + r.id, { method: 'DELETE' });
+        toast('Reporte eliminado', 'ok');
+        abrirMonitoreo();
+      } catch (e) { toast(e.message, 'err'); }
+    });
+
+    if (isEspera && state.esperaPendiente) {
+      const ep = state.esperaPendiente;
+      state.esperaPendiente = null;
+      abrirEsperaModal(r.id, ep, btnEspera);
+    }
+  }
+
+  async function reasignarReporte(id) {
+    const sel = $('#ger-tecnico');
+    const tcId = sel.value ? Number(sel.value) : null;
+    const tcName = sel.value ? sel.options[sel.selectedIndex].text : '';
+    try {
+      await api('/api/reportes/' + id + '/asignar', { method: 'POST', body: JSON.stringify({ tecnico_id: tcId, tecnico_nombre: tcName }) });
+      toast('Reasignado a ' + (tcName || 'Sin asignar'), 'ok');
+      if (state.gerenteDetalle) { state.gerenteDetalle.tecnico_id = tcId; state.gerenteDetalle.tecnico_nombre = tcName; }
+      pintarDetalleGerente();
+      if (tcId && state.gerenteDetalle) {
+        const r = state.gerenteDetalle;
+        const cliente = r.client_nombre || 'Cliente';
+        const equipo = r.equipo_nombre || '';
+        const desc = (r.descripcion || '').slice(0, 120);
+        const msg = '\uD83D\uDC77 *ASIGNACI\u00D3N DE T\u00C9CNICO*\n'
+          + '*Cliente:* ' + cliente + '\n'
+          + '*Reporte:* #' + id + '\n'
+          + (equipo ? '*Equipo:* ' + equipo + '\n' : '')
+          + '*Problema:* ' + desc + (r.descripcion && r.descripcion.length > 120 ? '...' : '') + '\n'
+          + '*T\u00E9cnico asignado:* ' + tcName + '\n'
+          + '\u2014 NexAlert';
+        try {
+          const Share = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+          if (Share) await Share.share({ title: 'Asignaci\u00F3n #' + id, text: msg, dialogTitle: 'Enviar asignaci\u00F3n' });
+          else if (navigator.share) await navigator.share({ title: 'Asignaci\u00F3n #' + id, text: msg });
+        } catch (e) { /* usuario cancelo */ }
+      }
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function cambiarEstadoGerente(id, estado) {
+    try {
+      await api('/api/reportes/' + id + '/estado', { method: 'POST', body: JSON.stringify({ estado }) });
+      toast('Estado: ' + ESTADO_LABEL[estado], 'ok');
+      if (state.gerenteDetalle) state.gerenteDetalle.estado = estado;
+      pintarDetalleGerente();
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function enviarNotaGerente(id) {
+    const texto = ($('#in-nota-ger') || {}).value || '';
+    if (!texto.trim()) { toast('Escribe un comentario', 'err'); return; }
+    try {
+      await api('/api/reportes/' + id + '/notas', { method: 'POST', body: JSON.stringify({ texto: texto.trim() }) });
+      toast('Comentario enviado', 'ok');
+      if (state.gerenteDetalle) {
+        state.gerenteDetalle.notas = state.gerenteDetalle.notas || [];
+        state.gerenteDetalle.notas.push({ texto: texto.trim(), autor: 'Gerente', creado: new Date().toISOString() });
+      }
+      pintarDetalleGerente();
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
   /* ========== NUEVO REPORTE ========== */
+  let _formCardOriginalHTML = null;
 
   function abrirNuevoReporte() {
     $('#home').classList.add('hidden');
     $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
     $('#detalle').classList.add('hidden');
+    $('#archivados-section').classList.add('hidden');
+    const formCard = $('#nuevo-reporte .form-card');
+    if (!_formCardOriginalHTML && formCard) _formCardOriginalHTML = formCard.innerHTML;
+    if (_formCardOriginalHTML && formCard) {
+      formCard.innerHTML = _formCardOriginalHTML;
+      $('#form-nuevo').addEventListener('submit', guardarNuevoReporte);
+    }
     $('#nuevo-reporte').classList.remove('hidden');
     state.view = 'nuevo';
-    $('#nf-cliente').value = '';
-    $('#nf-equipo').value = '';
-    $('#nf-descripcion').value = '';
-    $('#nf-prioridad').value = 'normal';
-    $('#nf-submit').disabled = false;
+    if ($('#nf-cliente')) $('#nf-cliente').value = '';
+    if ($('#nf-equipo')) $('#nf-equipo').value = '';
+    if ($('#nf-descripcion')) $('#nf-descripcion').value = '';
+    if ($('#nf-prioridad')) $('#nf-prioridad').value = 'normal';
+    if ($('#nf-submit')) $('#nf-submit').disabled = false;
+    const wrap = $('#nf-tecnico-wrap');
+    const sel = $('#nf-tecnico');
+    if (state.rol === 'gerente') {
+      wrap.classList.remove('hidden');
+      sel.innerHTML = '<option value="">Sin asignar</option>';
+      api('/api/tecnicos').then((data) => {
+        const tecs = (data.data || []).filter((t) => t.rol !== 'gerente' && t.activo !== 0);
+        tecs.forEach((t) => { sel.innerHTML += '<option value="' + t.id + '">' + esc(t.nombre) + '</option>'; });
+      }).catch(() => {});
+    } else {
+      wrap.classList.add('hidden');
+    }
     setTimeout(() => $('#nf-cliente').focus(), 200);
   }
 
@@ -970,6 +1529,7 @@
     const equipo = $('#nf-equipo').value.trim();
     const desc = $('#nf-descripcion').value.trim();
     const prio = $('#nf-prioridad').value;
+    const tcSel = $('#nf-tecnico-wrap').classList.contains('hidden') ? '' : ($('#nf-tecnico').value || '');
     if (!cliente) { toast('Escribe el nombre del cliente', 'err'); $('#nf-cliente').focus(); return; }
     if (!desc) { toast('Describe el problema', 'err'); $('#nf-descripcion').focus(); return; }
     const payload = {
@@ -978,27 +1538,52 @@
       descripcion: desc,
       prioridad: prio
     };
+    if (tcSel) payload.tecnico_id = Number(tcSel);
     $('#nf-submit').disabled = true;
+    let reporteCreado = null;
     if (navigator.onLine) {
       try {
         const data = await api('/api/reportes', { method: 'POST', body: JSON.stringify(payload) });
-        toast('Reporte #' + data.data.id + ' creado', 'ok');
-        cerrarNuevoReporte();
+        reporteCreado = data.data;
       } catch (e) {
         toast(e.message, 'err');
         $('#nf-submit').disabled = false;
+        return;
       }
     } else {
       await enqueuePending('nuevo_reporte', payload);
       toast('Reporte en cola (sin conexion)', 'ok');
-      cerrarNuevoReporte();
     }
+    if (reporteCreado) {
+      let tcNombre = '';
+      if (tcSel) {
+        const tcOpt = $('#nf-tecnico').selectedOptions[0];
+        tcNombre = tcOpt ? tcOpt.textContent : '';
+      }
+      const formCard = $('#nuevo-reporte .form-card');
+      if (formCard) {
+        state.ultimoReporte = { id: reporteCreado.id, cliente, equipo, desc, prio };
+        formCard.innerHTML = '<div class="reporte-creado">'
+          + '<div style="font-size:48px;margin-bottom:12px">\u2705</div>'
+          + '<h2 style="margin:0 0 8px">Reporte #' + reporteCreado.id + ' creado</h2>'
+          + '<p style="color:var(--muted);margin:0 0 20px;font-size:14px">' + esc(cliente) + (tcNombre ? ' &middot; Asignado a <b>' + esc(tcNombre) + '</b>' : '') + '</p>'
+          + '<button id="btn-compartir-ahora" class="btn-primary" style="width:100%;margin-bottom:10px">Compartir por WhatsApp</button>'
+          + '<button id="btn-ir-inicio" class="btn-ghost" style="width:100%">Volver al inicio</button>'
+          + '</div>';
+        $('#btn-compartir-ahora').addEventListener('click', () => compartirReporte(state.ultimoReporte));
+        $('#btn-ir-inicio').addEventListener('click', cerrarNuevoReporte);
+        return;
+      }
+    }
+    cerrarNuevoReporte();
   }
 
   /* ========== NAVEGACION ========== */
   function irInicio() {
     $('#detalle').classList.add('hidden');
     $('#dashboard-section').classList.add('hidden');
+    $('#monitoreo-section').classList.add('hidden');
+    $('#archivados-section').classList.add('hidden');
     $('#home').classList.remove('hidden');
     state.detalle = null;
     state.view = 'home';
@@ -1014,6 +1599,11 @@
   }
 
   function mostrarApp(u) {
+    state.rol = (u && u.rol) || 'tecnico';
+    const monBtn = $('#btn-monitoreo');
+    if (monBtn) monBtn.classList.toggle('hidden', state.rol !== 'gerente');
+    const monTopBtn = $('#btn-monitoreo-top');
+    if (monTopBtn) monTopBtn.classList.toggle('hidden', state.rol !== 'gerente');
     $('#login').classList.add('hidden');
     $('#topbar').classList.remove('hidden');
     $('#view').classList.remove('hidden');
@@ -1024,11 +1614,13 @@
     $('#filtro-hasta').value = '';
     irInicio();
     cargarReportes().catch((e) => toast(e.message, 'err'));
+    if (state.rol === 'gerente') cargarTecnicos().catch(() => {});
     processPendingQueue().catch(() => {});
     processFotoQueue().catch(() => {});
     actualizarBadgePendientes();
     initPush();
     initAppResume();
+    checkAppUpdate();
     if (!state.timer) state.timer = setInterval(() => {
       if (state.view !== 'home') return;
       cargarReportes().catch(() => {});
@@ -1042,6 +1634,40 @@
     $('#view').classList.add('hidden');
     $('#login').classList.remove('hidden');
     $('#in-usuario').focus();
+    if (NATIVO && BiometricAuth) {
+      BiometricAuth.isCredentialsSaved({ server: BIOMETRIC_SERVER }).then((r) => {
+        $('#btn-biometric').classList.toggle('hidden', !r.isSaved);
+      }).catch(() => { $('#btn-biometric').classList.add('hidden'); });
+    }
+  }
+
+  /* ========== APP UPDATE CHECK ========== */
+  const CURRENT_APP_VERSION = '1.5.16';
+  async function checkAppUpdate() {
+    try {
+      const data = await api('/api/app-version');
+      const latest = data.data;
+      if (latest && latest.version && latest.version !== CURRENT_APP_VERSION) {
+        toast('\uD83D\uDD04 Nueva version v' + latest.version + ' disponible', 'ok');
+        if (NATIVO && latest.downloadUrl) {
+          setTimeout(() => {
+            if (confirm('NexAlert v' + latest.version + ' disponible.\n\nTu version: v' + CURRENT_APP_VERSION + '\n\nInstalar actualizacion?')) {
+              const AI = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ApkInstaller;
+              if (AI) {
+                toast('Descargando e instalando...', 'ok');
+                AI.downloadAndInstall({ url: latest.downloadUrl }).then(() => {
+                  toast('Actualizacion instalada', 'ok');
+                }).catch((e) => {
+                  toast('Error: ' + (e.message || e), 'err');
+                });
+              } else {
+                window.open(latest.downloadUrl, '_system');
+              }
+            }
+          }, 2000);
+        }
+      }
+    } catch (e) { /* noop */ }
   }
 
   /* ========== PUSH NOTIFICATIONS ========== */
@@ -1065,9 +1691,26 @@
       PushNotifications.addListener('pushNotificationReceived', (notif) => {
         toast(notif.title || 'Nueva notificación');
       });
-      PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      PushNotifications.addListener('pushNotificationActionPerformed', async (action) => {
         const data = action.notification?.data;
-        if (data && data.reporteId) {
+        if (data && data.tipo === 'update' && data.downloadUrl) {
+          if (NATIVO && window.Capacitor.Plugins.App) {
+            try { await window.Capacitor.Plugins.App.moveToForeground(); } catch (_) {}
+          }
+          setTimeout(() => {
+            if (confirm('NexAlert v' + (data.version || '') + ' disponible. Descargar actualizacion?')) {
+              window.open(data.downloadUrl, '_system');
+            }
+          }, 500);
+        } else if (data && data.reporteId) {
+          if (NATIVO && window.Capacitor.Plugins.App) {
+            try { await window.Capacitor.Plugins.App.moveToForeground(); } catch (_) {}
+          }
+          if (state.view === 'login') {
+            const u = usuario();
+            if (u) mostrarApp(u);
+          }
+          if (state.view !== 'home') irInicio();
           abrirDetalle(Number(data.reporteId));
         }
       });
@@ -1100,6 +1743,10 @@
           irInicio();
         } else if (state.view === 'dashboard') {
           irInicio();
+        } else if (state.view === 'monitoreo') {
+          irInicio();
+        } else if (state.view === 'monitoreo-detalle') {
+          abrirMonitoreo();
         } else if (state.view === 'nuevo') {
           cerrarNuevoReporte();
         } else {
@@ -1173,10 +1820,30 @@
     err.classList.add('hidden');
     btn.disabled = true;
     try {
-      const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ usuario: $('#in-usuario').value.trim(), pass: $('#in-pass').value }) });
+      const usuario = $('#in-usuario').value.trim();
+      const pass = $('#in-pass').value;
+      const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ usuario, pass }) });
       localStorage.setItem(TOKEN_KEY, r.token);
       localStorage.setItem(USER_KEY, JSON.stringify(r.tecnico));
       mostrarApp(r.tecnico);
+      if (NATIVO && BiometricAuth) {
+        try {
+          const avail = await BiometricAuth.isAvailable();
+          const saved = await BiometricAuth.isCredentialsSaved({ server: BIOMETRIC_SERVER });
+          if (avail.isAvailable && !saved.isSaved) {
+            setTimeout(async () => {
+              const activar = await confirmAsync('Activar acceso rapido con biometria (huella/rostro)?');
+              if (activar) {
+                try {
+                  await BiometricAuth.verifyIdentity({ reason: 'Verifica tu identidad para activar acceso rapido', title: 'Activar biometria', negativeButtonText: 'Cancelar' });
+                  await BiometricAuth.setCredentials({ username: usuario, password: pass, server: BIOMETRIC_SERVER });
+                  toast('Biometria activada');
+                } catch (e) { /* noop */ }
+              }
+            }, 800);
+          }
+        } catch (e) { /* noop */ }
+      }
     } catch (e) {
       err.textContent = e.message;
       err.classList.remove('hidden');
@@ -1185,9 +1852,35 @@
     }
   });
 
+  $('#btn-biometric').addEventListener('click', async () => {
+    const err = $('#login-error');
+    const btn = $('#btn-biometric');
+    err.classList.add('hidden');
+    btn.disabled = true;
+    try {
+      await BiometricAuth.verifyIdentity({ reason: 'Verifica tu identidad para entrar', title: 'NexAlert', negativeButtonText: 'Usar password' });
+      const creds = await BiometricAuth.getCredentials({ server: BIOMETRIC_SERVER });
+      const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ usuario: creds.username, pass: creds.password }) });
+      localStorage.setItem(TOKEN_KEY, r.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(r.tecnico));
+      mostrarApp(r.tecnico);
+    } catch (e) {
+      if (e.code === 16 || e.code === 11) {
+        // user cancelled
+      } else {
+        toast('Error de biometria, usa tu password');
+      }
+    } finally { btn.disabled = false; }
+  });
+
   $('#btn-logout').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); cerrarSesion(); });
   $('#btn-theme').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); toggleTheme(); });
   $('#btn-stats').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirDashboard(); });
+  $('#btn-monitoreo').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirMonitoreo(); });
+  $('#btn-monitoreo-top').addEventListener('click', () => { abrirMonitoreo(); });
+  $('#btn-archivados').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirArchivados(); });
+  const btnArchHome = $('#btn-arch-home');
+  if (btnArchHome) btnArchHome.addEventListener('click', () => { abrirArchivados(); });
   $('#btn-refresh').addEventListener('click', async () => {
     $('#top-dropdown').classList.add('hidden');
     const btn = $('#btn-refresh');
@@ -1238,6 +1931,13 @@
   $('#esp-foto-cam').addEventListener('click', esperarFotoCam);
   $('#esp-foto-gal').addEventListener('click', esperarFotoGal);
 
+  $('#esp-sub-repuesto').addEventListener('click', () => seleccionarEsperaSub('espera_repuesto'));
+  $('#esp-sub-cliente').addEventListener('click', () => seleccionarEsperaSub('espera_cliente'));
+  $('#esp-cancel-sub').addEventListener('click', cerrarEsperaModal);
+
+  $('#resolver-cancel').addEventListener('click', cerrarResolverModal);
+  $('#resolver-submit').addEventListener('click', confirmarResolver);
+
   function confirmar(titulo, body) {
     return new Promise((resolve) => {
       $('#modal-titulo').textContent = titulo;
@@ -1245,6 +1945,18 @@
       $('#modal-ok').textContent = 'Eliminar';
       $('#modal-ok').style.background = 'var(--red)';
       $('#modal-cancel').textContent = 'Cancelar';
+      $('#modal').classList.remove('hidden');
+      $('#modal')._resolve = resolve;
+    });
+  }
+
+  function confirmAsync(titulo, body) {
+    return new Promise((resolve) => {
+      $('#modal-titulo').textContent = titulo;
+      $('#modal-body').innerHTML = '<p style="margin:0;color:var(--muted);font-size:14px;line-height:1.5">' + esc(body || '') + '</p>';
+      $('#modal-ok').textContent = 'Activar';
+      $('#modal-ok').style.background = '';
+      $('#modal-cancel').textContent = 'Ahora no';
       $('#modal').classList.remove('hidden');
       $('#modal')._resolve = resolve;
     });
@@ -1270,6 +1982,44 @@
   $('#filtro-hasta').addEventListener('change', pintarLista);
 
   $('#lista').addEventListener('click', (ev) => {
+    if (ev.target.closest('.asignar-btn-wrap') || ev.target.closest('.asignar-wrap')) {
+      ev.stopPropagation();
+      const asignarBtn = ev.target.closest('.asignar-btn');
+      if (asignarBtn) {
+        const reportId = Number(asignarBtn.dataset.reportId);
+        const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+        if (wrap) { wrap.classList.toggle('hidden'); wrap.querySelector('.asignar-select').focus(); }
+        return;
+      }
+      const asignarOk = ev.target.closest('.asignar-ok');
+      if (asignarOk) {
+        const reportId = Number(asignarOk.dataset.reportId);
+        const sel = document.querySelector('.asignar-select[data-report-id="' + reportId + '"]');
+        if (sel) asignarDesdeLista(reportId, sel);
+        return;
+      }
+      const asignarCancel = ev.target.closest('.asignar-cancel');
+      if (asignarCancel) {
+        const reportId = Number(asignarCancel.dataset.reportId);
+        const wrap = document.querySelector('[data-asignar-for="' + reportId + '"]');
+        if (wrap) wrap.classList.add('hidden');
+        return;
+      }
+      const delBtn = ev.target.closest('.card-del-btn');
+      if (delBtn) {
+        const delId = Number(delBtn.dataset.delId);
+        confirmAsync('Eliminar reporte', 'Seguro que quieres eliminar este reporte? Esta accion no se puede deshacer.').then((ok) => {
+          if (!ok) return;
+          api('/api/reportes/' + delId, { method: 'DELETE' }).then(() => {
+            toast('Reporte eliminado', 'ok');
+            state.reportes = state.reportes.filter((r) => r.id !== delId);
+            pintarLista();
+          }).catch((e) => toast(e.message, 'err'));
+        });
+        return;
+      }
+      return;
+    }
     const card = ev.target.closest('.rp-card');
     if (card) abrirDetalle(Number(card.dataset.id)).catch((e) => toast(e.message, 'err'));
   });
@@ -1297,5 +2047,29 @@
   initConnectivity();
   initPullToRefresh();
 
-  if (token()) mostrarApp(usuario()); else mostrarLogin();
+  if (token()) {
+    mostrarApp(usuario());
+  } else {
+    mostrarLogin();
+  }
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

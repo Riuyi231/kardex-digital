@@ -205,6 +205,7 @@
     actualizarBadgePendientes();
   }
 
+  const MAX_COLA_REINTENTOS = 24;
   async function processPendingQueue() {
     if (!navigator.onLine) return;
     const items = await idbGetAll('pending');
@@ -222,10 +223,23 @@
         } else if (item.tipo === 'nuevo_reporte') {
           await api('/api/reportes', { method: 'POST', body: JSON.stringify(item.payload) });
         } else if (item.tipo === 'estado_nota_foto') {
-          await api('/api/reportes/' + item.payload.id + '/estado', { method: 'POST', body: JSON.stringify(item.payload) });
+          const envio = { estado: item.payload.estado };
+          if (item.payload.solucion) envio.solucion = item.payload.solucion;
+          if (item.payload.enviar_grupo != null) envio.enviar_grupo = item.payload.enviar_grupo;
+          if (Array.isArray(item.payload.fotos) && item.payload.fotos.length) envio.fotos = item.payload.fotos;
+          if (item.payload.nota) envio.nota = item.payload.nota;
+          await api('/api/reportes/' + item.payload.id + '/estado', { method: 'POST', body: JSON.stringify(envio) });
         }
         await idbDelete('pending', item.ts);
-      } catch (e) { break; }
+      } catch (e) {
+        const fallos = (item.intentos || 0) + 1;
+        if (fallos >= MAX_COLA_REINTENTOS || (e.status >= 400 && e.status < 500)) {
+          await idbDelete('pending', item.ts);
+        } else {
+          item.intentos = fallos;
+          await idbPut('pending', item);
+        }
+      }
     }
     actualizarBadgePendientes();
   }
@@ -283,7 +297,7 @@
   }
 
   /* ========== ESTADO ========== */
-  let state = { reportes: [], detalle: null, timer: null, view: 'home', stats: null, rol: 'tecnico', monitoreoData: null, monitoreoFiltro: '', gerenteDetalle: null };
+  let state = { reportes: [], detalle: null, timer: null, view: 'home', stats: null, rol: 'tecnico', monitoreoData: null, monitoreoFiltro: '', gerenteDetalle: null, archRows: [], archBuscar: '' };
 
   function token() { return localStorage.getItem(TOKEN_KEY); }
   function usuario() { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch (e) { return null; } }
@@ -296,7 +310,11 @@
     let data = {};
     try { data = await res.json(); } catch (e) { /* noop */ }
     if (res.status === 401 && token()) { cerrarSesion(); throw new Error('Sesion expirada'); }
-    if (!res.ok || data.ok === false) throw new Error(data.error || 'Error del servidor');
+    if (!res.ok || data.ok === false) {
+      const err = new Error(data.error || 'Error del servidor');
+      err.status = res.status;
+      throw err;
+    }
     return data;
   }
 
@@ -727,18 +745,19 @@
     } catch (e) { /* usuario cancelo */ }
   }
 
-  /* ========== ESPERA MODAL ========== */
-  let esperaState = { reporteId: null, estado: null, btn: null, fotoFile: null, fotoBase64: null, fotoNombre: null };
+/* ========== ESPERA MODAL ========== */
+  let esperaState = { reporteId: null, estado: null, btn: null, fotos: [] };
+
+  const MAX_ESP_FOTOS = 6;
 
   function abrirEsperaModal(reporteId, estado, btn) {
     const savedScroll = window.scrollY || 0;
     const view = document.getElementById('view');
     const savedViewScroll = view ? view.scrollTop : 0;
-    esperaState = { reporteId, estado, btn, fotoFile: null, fotoBase64: null, fotoNombre: null };
+    esperaState = { reporteId, estado, btn, fotos: [] };
     $('#esp-nota').value = '';
-    $('#esp-foto-preview').classList.add('hidden');
-    $('#esp-foto-preview').src = '';
-    $('#esp-foto-nombre').textContent = '';
+    $('#esp-foto-list').innerHTML = '';
+    $('#esp-enviar-grupo').checked = true;
     $('#esp-submit').disabled = false;
     $('#espera-modal').classList.remove('hidden');
     $('#top-dropdown').classList.add('hidden');
@@ -774,18 +793,40 @@
 
   function cerrarEsperaModal() {
     $('#espera-modal').classList.add('hidden');
-    esperaState = { reporteId: null, estado: null, btn: null, fotoFile: null, fotoBase64: null, fotoNombre: null };
+    esperaState = { reporteId: null, estado: null, btn: null, fotos: [] };
+  }
+
+  function renderEsperaFotos() {
+    const cont = $('#esp-foto-list');
+    cont.innerHTML = '';
+    esperaState.fotos.forEach((f, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'esp-foto-thumb';
+      wrap.onclick = () => {
+        esperaState.fotos.splice(i, 1);
+        renderEsperaFotos();
+      };
+      const img = document.createElement('img');
+      img.src = f.dataUrl;
+      const x = document.createElement('span');
+      x.className = 'esp-foto-x';
+      x.textContent = '✕';
+      wrap.appendChild(img);
+      wrap.appendChild(x);
+      cont.appendChild(wrap);
+    });
   }
 
   async function confirmarEspera() {
     const nota = $('#esp-nota').value.trim();
-    const { reporteId, estado, btn, fotoBase64, fotoNombre } = esperaState;
-    if (!nota && !fotoBase64) { toast('Escribe una nota o adjunta una foto.', 'err'); return; }
+    const { reporteId, estado, btn, fotos } = esperaState;
+    const enviarGrupo = document.getElementById('esp-enviar-grupo').checked ? 1 : 0;
+    if (!nota && !fotos.length) { toast('Escribe una nota o adjunta una foto.', 'err'); return; }
     $('#esp-submit').disabled = true;
-    const payload = { estado };
+    const payload = { estado, enviar_grupo: enviarGrupo };
     if (nota) payload.nota = nota;
-    if (fotoBase64 && fotoNombre) {
-      payload.foto = { nombre: fotoNombre, tipo: 'image/jpeg', datos: fotoBase64 };
+    if (fotos.length) {
+      payload.fotos = fotos.slice(0, MAX_ESP_FOTOS).map((f) => ({ nombre: f.nombre, tipo: 'image/jpeg', datos: f.base64 }));
     }
     const isGerente = state.view === 'monitoreo-detalle';
     if (!navigator.onLine) {
@@ -842,25 +883,27 @@
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = true;
     input.onchange = (ev) => procesarEsperaFoto(ev.target.files);
     input.click();
   }
 
   async function procesarEsperaFoto(files) {
-    if (!files || !files[0]) return;
-    const file = files[0];
-    if (file.size > 8 * 1024 * 1024) { toast('La foto supera 8 MB', 'err'); return; }
-    const ext = file.name.split('.').pop() || 'jpg';
-    const nombre = 'esp_' + Date.now() + '.' + ext;
-    esperaState.fotoFile = file;
-    esperaState.fotoNombre = nombre;
-    const dataUrl = await procesarImagen(file);
-    const comma = dataUrl.indexOf(',');
-    esperaState.fotoBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-    const preview = $('#esp-foto-preview');
-    preview.src = dataUrl;
-    preview.classList.remove('hidden');
-    $('#esp-foto-nombre').textContent = file.name;
+    if (!files || !files.length) return;
+    const faltan = MAX_ESP_FOTOS - esperaState.fotos.length;
+    const lista = Array.from(files).slice(0, faltan);
+    for (const file of lista) {
+      if (file.size > 8 * 1024 * 1024) { toast('Un archivo supera 8 MB', 'err'); continue; }
+      const ext = file.name.split('.').pop() || 'jpg';
+      const nombre = 'esp_' + Date.now() + '_' + Math.floor(Math.random() * 1000) + '.' + ext;
+      const dataUrl = await procesarImagen(file);
+      const comma = dataUrl.indexOf(',');
+      const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+      esperaState.fotos.push({ nombre, base64, dataUrl });
+      if (esperaState.fotos.length >= MAX_ESP_FOTOS) break;
+    }
+    if (esperaState.fotos.length >= MAX_ESP_FOTOS) toast('Maximo ' + MAX_ESP_FOTOS + ' fotos.', 'err');
+    renderEsperaFotos();
   }
 
   /* ========== RESOLVER MODAL ========== */
@@ -882,14 +925,13 @@
   }
 
   async function confirmarResolver() {
-    const nota = $('#resolver-nota').value.trim();
+    const solucion = $('#resolver-nota').value.trim();
     const { reporteId, btn } = resolverState;
-    if (!nota) { toast('Escribe la solucion aplicada.', 'err'); return; }
+    if (!solucion) { toast('Escribe la solucion aplicada.', 'err'); return; }
     $('#resolver-submit').disabled = true;
-    const notaFinal = '[Solucion] ' + nota;
     const isGerente = state.view === 'monitoreo-detalle';
     if (!navigator.onLine) {
-      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', nota: notaFinal });
+      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', solucion });
       if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
       else { if (state.detalle && state.detalle.id === reporteId) state.detalle.estado = 'resuelto'; pintarDetalle(); actualizarListaDesdeDetalle(); }
       toast('Guardado localmente.', 'ok');
@@ -897,13 +939,13 @@
       return;
     }
     try {
-      const r = await api('/api/reportes/' + reporteId + '/estado', { method: 'POST', body: JSON.stringify({ estado: 'resuelto', nota: notaFinal }) });
+      const r = await api('/api/reportes/' + reporteId + '/estado', { method: 'POST', body: JSON.stringify({ estado: 'resuelto', solucion }) });
       if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
       else { state.detalle = { ...state.detalle, ...r.data }; await idbPut('reportes', state.detalle); pintarDetalle(); actualizarListaDesdeDetalle(); }
       toast('Reporte resuelto.', 'ok');
       cerrarResolverModal();
     } catch (e) {
-      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', nota: notaFinal });
+      await enqueuePending('estado_nota_foto', { id: reporteId, estado: 'resuelto', solucion });
       if (isGerente) { if (state.gerenteDetalle) state.gerenteDetalle.estado = 'resuelto'; pintarDetalleGerente(); }
       else { state.detalle.estado = 'resuelto'; pintarDetalle(); }
       toast('Guardado localmente.', 'ok');
@@ -1127,6 +1169,7 @@
     $('#monitoreo-section').classList.add('hidden');
     $('#archivados-section').classList.remove('hidden');
     state.view = 'archivados';
+    state.archBuscar = '';
     window.scrollTo(0, 0);
     const sec = $('#archivados-section');
     sec.innerHTML = '<div class="cargando">Cargando archivados...</div>';
@@ -1137,32 +1180,46 @@
     try {
       await api('/api/reportes/auto-archive', { method: 'POST' }).catch(() => {});
       const res = await api('/api/reportes/archived');
-      const rows = res.data || [];
-      if (!rows.length) {
-        sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados</h2></div>'
-          + '<div class="vacio"><p>No hay reportes archivados.</p><p class="hint">Los reportes resueltos con mas de 24h se archivan automaticamente.</p></div>';
-        $('#btn-arch-back').addEventListener('click', irInicio);
-        return;
-      }
-      const rpRows = rows.map((r) => {
-        const eqTxt = r.equipo_nombre || 'Equipo';
-        return '<div class="rp-card" data-id="' + r.id + '" data-goto="arch-detalle">'
-          + '<div class="head"><div class="cliente">' + esc(r.client_nombre || 'Cliente') + '</div>' + badgeEstado(r.estado) + '</div>'
-          + '<div class="equipo">' + esc(eqTxt) + '</div>'
-          + '<div class="descripcion">' + esc(r.descripcion || '') + '</div>'
-          + '<div class="meta"><span class="tecnico-asignado">' + (r.tecnico_nombre ? '\ud83d\udc77 ' + esc(r.tecnico_nombre) : '') + '</span> <span class="fecha">Resuelto: ' + fechaLarga(r.resuelto_at || r.fecha) + '</span></div>'
-          + '</div>';
-      }).join('');
-      sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados (' + rows.length + ')</h2></div>'
-          + '<div class="vacio"><p class="hint">Reportes resueltos con mas de 24h. Se archivan automaticamente.</p></div>'
-          + '<div id="arch-lista">' + rpRows + '</div>';
+      state.archRows = res.data || [];
+      sec.innerHTML = '<div class="mon-head"><button id="btn-arch-back" class="back-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg> Volver</button><h2>Archivados (<span id="arch-count">0</span>)</h2></div>'
+        + '<div class="arch-buscar-wrap"><input id="arch-buscar" type="search" placeholder="Buscar cliente, equipo, problema..." value="' + esc(state.archBuscar || '') + '"></div>'
+        + '<div id="arch-lista"></div>';
       $('#btn-arch-back').addEventListener('click', irInicio);
-      sec.querySelectorAll('.rp-card[data-goto="arch-detalle"]').forEach((el) => el.addEventListener('click', () => {
-        abrirDetalle(Number(el.dataset.id));
-      }));
+      const busc = $('#arch-buscar');
+      if (busc) busc.addEventListener('input', () => { state.archBuscar = busc.value; pintarArchivados(); });
+      pintarArchivados();
     } catch (e) {
       sec.innerHTML = '<div class="vacio"><p>Error: ' + esc(e.message) + '</p></div>';
     }
+  }
+
+  function pintarArchivados() {
+    const lista = $('#arch-lista');
+    if (!lista) return;
+    const rows = state.archRows || [];
+    const q = (state.archBuscar || '').trim().toLowerCase();
+    const filtradas = q ? rows.filter((r) => {
+      const s = ((r.client_nombre || '') + ' ' + (r.equipo_nombre || '') + ' ' + (r.descripcion || '') + ' ' + (r.tecnico_nombre || '') + ' ' + r.id).toLowerCase();
+      return s.indexOf(q) >= 0;
+    }) : rows;
+    const cont = $('#arch-count');
+    if (cont) cont.textContent = filtradas.length;
+    if (!filtradas.length) {
+      lista.innerHTML = '<div class="vacio"><p>No hay reportes archivados que coincidan.</p></div>';
+      return;
+    }
+    lista.innerHTML = filtradas.map((r) => {
+      const eqTxt = r.equipo_nombre || 'Equipo';
+      return '<div class="rp-card" data-id="' + r.id + '" data-goto="arch-detalle">'
+        + '<div class="head"><div class="cliente">' + esc(r.client_nombre || 'Cliente') + '</div>' + badgeEstado(r.estado) + '</div>'
+        + '<div class="equipo">' + esc(eqTxt) + '</div>'
+        + '<div class="descripcion">' + esc(r.descripcion || '') + '</div>'
+        + '<div class="meta"><span class="tecnico-asignado">' + (r.tecnico_nombre ? '\ud83d\udc77 ' + esc(r.tecnico_nombre) : '') + '</span> <span class="fecha">Resuelto: ' + fechaLarga(r.resuelto_at || r.fecha) + '</span></div>'
+        + '</div>';
+    }).join('');
+    lista.querySelectorAll('.rp-card[data-goto="arch-detalle"]').forEach((el) => el.addEventListener('click', () => {
+      abrirDetalle(Number(el.dataset.id));
+    }));
   }
 
   /* ========== MONITOREO (GERENTE) ========== */
@@ -1585,7 +1642,7 @@
   }
 
   /* ========== APP UPDATE CHECK ========== */
-  const CURRENT_APP_VERSION = '1.5.15';
+  const CURRENT_APP_VERSION = '1.5.17';
   async function checkAppUpdate() {
     try {
       const data = await api('/api/app-version');
@@ -1822,6 +1879,8 @@
   $('#btn-monitoreo').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirMonitoreo(); });
   $('#btn-monitoreo-top').addEventListener('click', () => { abrirMonitoreo(); });
   $('#btn-archivados').addEventListener('click', () => { $('#top-dropdown').classList.add('hidden'); abrirArchivados(); });
+  const btnArchHome = $('#btn-arch-home');
+  if (btnArchHome) btnArchHome.addEventListener('click', () => { abrirArchivados(); });
   $('#btn-refresh').addEventListener('click', async () => {
     $('#top-dropdown').classList.add('hidden');
     const btn = $('#btn-refresh');
@@ -1994,6 +2053,8 @@
     mostrarLogin();
   }
 })();
+
+
 
 
 

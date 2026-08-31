@@ -511,10 +511,28 @@ body.kb-abierto #espera-modal { align-items: flex-start; padding: 24px 20px; ove
 .espera-card textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 .esp-foto-section { margin-top: 12px; }
 .esp-foto-btns { display: flex; gap: 10px; }
-.esp-foto-preview {
-  width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px;
-  margin-top: 10px; border: 1px solid var(--border);
+.esp-foto-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.esp-foto-thumb {
+  position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); cursor: pointer;
 }
+.esp-foto-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.esp-foto-x {
+  position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 11px; line-height: 18px;
+  text-align: center; font-style: normal;
+}
+.esp-grupo-chk {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: 14px; color: var(--text); cursor: pointer;
+}
+.esp-grupo-chk input { width: 18px; height: 18px; accent-color: var(--accent); }
+.arch-buscar-wrap { position: sticky; top: 0; z-index: 5; padding: 10px 0; background: var(--bg); }
+.arch-buscar-wrap input {
+  width: 100%; padding: 12px 14px; font-size: 15px; border-radius: 12px;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--border); outline: none;
+}
+.arch-buscar-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
 /* ---------- nuevo reporte ---------- */
 .btn-nuevo-rp {
