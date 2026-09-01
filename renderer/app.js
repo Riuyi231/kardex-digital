@@ -2847,18 +2847,22 @@
   }
 
   function showCedulaAmpliada(side) {
-    const src = modalRecord && (side === 'frente' ? modalRecord.frente : modalRecord.reverso);
+    const lb = $('cedula-lightbox');
     const img = $('lightbox-img');
+    if (!lb || !img) return;
+    const src = modalRecord && (side === 'frente' ? modalRecord.frente : modalRecord.reverso);
     const title = side === 'frente' ? 'Cédula — Frente' : 'Cédula — Reverso';
     if (!src) { toast('No hay imagen de ' + (side === 'frente' ? 'frente' : 'reverso') + ' para mostrar.', 'info'); return; }
     $('lightbox-title').textContent = title;
     img.src = src;
-    $('cedula-lightbox').classList.remove('hidden');
+    lb.classList.remove('hidden');
   }
 
   function closeCedulaLightbox() {
-    $('cedula-lightbox').classList.add('hidden');
-    $('lightbox-img').src = '';
+    const lb = $('cedula-lightbox');
+    const img = $('lightbox-img');
+    if (lb) lb.classList.add('hidden');
+    if (img) img.src = '';
   }
 
   function setLoading(on, text) {
@@ -3165,11 +3169,14 @@
     });
 
     document.querySelectorAll('.btn-view-full').forEach(btn => {
-      btn.addEventListener('click', () => showCedulaAmpliada(btn.getAttribute('data-side')));
+      if (btn) btn.addEventListener('click', () => showCedulaAmpliada(btn.getAttribute('data-side')));
     });
-    $('lightbox-close').addEventListener('click', closeCedulaLightbox);
-    $('lightbox-close-btn').addEventListener('click', closeCedulaLightbox);
-    $('cedula-lightbox').addEventListener('click', (e) => {
+    const _lightboxClose = $('lightbox-close');
+    if (_lightboxClose) _lightboxClose.addEventListener('click', closeCedulaLightbox);
+    const _lightboxCloseBtn = $('lightbox-close-btn');
+    if (_lightboxCloseBtn) _lightboxCloseBtn.addEventListener('click', closeCedulaLightbox);
+    const _lightbox = $('cedula-lightbox');
+    if (_lightbox) _lightbox.addEventListener('click', (e) => {
       if (e.target === $('cedula-lightbox')) closeCedulaLightbox();
     });
 
