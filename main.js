@@ -30,7 +30,6 @@ const documentos = require('./services/documentos');
 const plantillas = require('./services/plantillas');
 const excel = require('./services/excel');
 const notificaciones = require('./services/notificaciones');
-const correos = require('./services/mailer');
 const importService = require('./services/import');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -778,6 +777,13 @@ function registerIpc() {
     return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio, db.salarioHistorial.listForEmployee);
   }));
 
+  ipcMain.handle('salarios:reset-base', wrap((e) => {
+    const user = requireRole(['admin']);
+    const res = db.salarioHistorial.resetBaseline();
+    db.audit.add(user, 'salarios:reset-base', `Historial de salarios reiniciado (año ${res.anio}, base aplicada a ${res.registros} empleados)`);
+    return res;
+  }));
+
   ipcMain.handle('export:excel', wrap(async (e, { filename, sheets } = {}) => {
     requireRole(['admin', 'editor']);
     const res = await dialog.showSaveDialog(mainWindow, {
@@ -843,6 +849,40 @@ function registerIpc() {
     return db.reportes.antiguedad();
   }));
 
+  ipcMain.handle('reportes:print', wrap(async (e, { title = '', html = '' } = {}) => {
+    requireAuth();
+    return new Promise((resolve, reject) => {
+      const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+      win.webContents.on('did-finish-load', async () => {
+        try {
+          await win.webContents.print({ silent: false, printBackground: true });
+          resolve(true);
+        } catch (err) { reject(err); }
+        finally { win.close(); }
+      });
+      win.webContents.on('did-fail-load', () => { reject(new Error('No se pudo abrir la impresión')); win.close(); });
+      win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    });
+  }));
+
+  ipcMain.handle('reportes:pdf', wrap(async (e, { title = '', html = '' } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const buf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'Letter' });
+    win.destroy();
+    const fname = sanitizeFilename(String(title).toLowerCase() || 'reporte');
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Guardar reporte PDF',
+      defaultPath: path.join(app.getPath('documents'), `${fname}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (res.canceled || !res.filePath) return null;
+    fs.writeFileSync(res.filePath, buf);
+    db.audit.add(user, 'reportes:pdf', title);
+    return res.filePath;
+  }));
+
   ipcMain.handle('reportes:cumpleanos', wrap((e, { mes } = {}) => {
     requireRole(['admin', 'editor']);
     return db.reportes.cumpleanos(mes);
@@ -851,6 +891,31 @@ function registerIpc() {
   ipcMain.handle('reportes:departamentos', wrap(() => {
     requireRole(['admin', 'editor']);
     return db.reportes.departamentos();
+  }));
+
+  ipcMain.handle('reportes:nomina-departamentos', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.nominaDepartamentos();
+  }));
+
+  ipcMain.handle('reportes:empleados', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.empleadosCompleto();
+  }));
+
+  ipcMain.handle('reportes:cedulas-vencer', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.cedulasVencer();
+  }));
+
+  ipcMain.handle('reportes:aniversarios', wrap((e, { anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.aniversarios(anio);
+  }));
+
+  ipcMain.handle('reportes:beneficios', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.beneficios();
   }));
 
   ipcMain.handle('vacaciones:list', wrap((e, { employee_id } = {}) => {
@@ -898,52 +963,17 @@ function registerIpc() {
     return true;
   }));
 
-  ipcMain.handle('correos:settings', wrap(() => {
+  ipcMain.handle('correos:mailto', wrap(async (e, { to = '', subject = '', body = '', cc = '' } = {}) => {
     requireRole(['admin', 'editor']);
-    return correos.getSettings();
-  }));
-
-  ipcMain.handle('correos:saveSettings', wrap((e, { settings } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const saved = correos.saveSettings(settings || {});
-    db.audit.add(user, 'correos:saveSettings', 'Configuración SMTP actualizada');
-    return saved;
-  }));
-
-  ipcMain.handle('correos:test', wrap(async () => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.testMail();
-    db.audit.add(user, 'correos:test', `Prueba enviada a ${r.to}`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendCedulas', wrap(async (e, { employee_ids } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendCedulas(employee_ids);
-    db.audit.add(user, 'correos:sendCedulas', `${r.sent} enviado(s)`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendNomina', wrap(async (e, { mes, anio, employee_ids, vista } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const v = vista || 'mensual';
-    const r = await correos.sendNomina({ mes, anio, employeeIds: employee_ids, vista: v });
-    db.audit.add(user, 'correos:sendNomina', `${r.sent} enviado(s) (${v} ${mes}/${anio})`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendReminders', wrap(async () => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendReminders();
-    db.audit.add(user, 'correos:sendReminders', `${r.sent} recordatorio(s) enviado(s)`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendCustom', wrap(async (e, { employee_ids, to, subject, text, attachments } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendCustom({ employeeIds: employee_ids, to, subject, text, attachments });
-    db.audit.add(user, 'correos:sendCustom', `${r.sent} enviado(s)`);
-    return r;
+    try {
+      const params = [];
+      if (subject) params.push('subject=' + encodeURIComponent(subject));
+      if (body) params.push('body=' + encodeURIComponent(body));
+      if (cc) params.push('cc=' + encodeURIComponent(cc));
+      const url = 'mailto:' + encodeURIComponent(to) + (params.length ? '?' + params.join('&') : '');
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (err) { return { ok: false, error: err.message }; }
   }));
 
   ipcMain.handle('correos:log', wrap((e, { limit } = {}) => {

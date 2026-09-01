@@ -138,6 +138,18 @@
           </div>
         </div>
 
+        <!-- Info extra -->
+        <div class="dash-info-grid">
+          <div class="card dash-card">
+            <h3 class="card-title">🔔 Próximas alertas</h3>
+            <div id="dash-alertas" class="dash-lista muted"><p class="muted small">Cargando…</p></div>
+          </div>
+          <div class="card dash-card">
+            <h3 class="card-title">💰 Nómina</h3>
+            <div id="dash-nomina" class="dash-lista muted"><p class="muted small">Cargando…</p></div>
+          </div>
+        </div>
+
         <!-- Recent records -->
         <div class="card table-card">
           <div class="recent-head">
@@ -212,6 +224,11 @@
           <div id="employees-empty" class="empty-state hidden">
             <p>No hay registros todavía. Cree el primero cargando una cédula en PDF.</p>
           </div>
+          <div class="pagination hidden" id="emp-pagination">
+            <button class="btn btn-ghost btn-sm" id="emp-prev" disabled>← Anterior</button>
+            <span id="emp-page-info" class="pagination-info">Página 1 de 1</span>
+            <button class="btn btn-ghost btn-sm" id="emp-next" disabled>Siguiente →</button>
+          </div>
         </div>
       </section>
 
@@ -247,6 +264,11 @@
           </table>
           <div id="inactive-empty" class="empty-state hidden">
             <p>No hay empleados inactivos. Al dar de baja a un empleado activo aparecerá aquí.</p>
+          </div>
+          <div class="pagination hidden" id="inactive-pagination">
+            <button class="btn btn-ghost btn-sm" id="inactive-prev" disabled>← Anterior</button>
+            <span id="inactive-page-info" class="pagination-info">Página 1 de 1</span>
+            <button class="btn btn-ghost btn-sm" id="inactive-next" disabled>Siguiente →</button>
           </div>
         </div>
       </section>
@@ -412,7 +434,7 @@
         <header class="view-header">
           <div>
             <h2>Reportes de planilla</h2>
-            <p>Plantilla, antigüedad, cumpleaños y distribución por departamento.</p>
+            <p>Plantilla, antigüedad, cumpleaños, costo por departamento, cédulas, aniversarios y más.</p>
           </div>
           <div class="view-actions">
             <button class="btn btn-primary" id="btn-rep-plantilla">Plantilla</button>
@@ -422,7 +444,14 @@
             <button class="btn btn-ghost" id="btn-rep-deptos">Departamentos</button>
             <select id="rep-anio" title="Año para el reporte fiscal 609 (Planilla de pago)"></select>
             <button class="btn btn-primary" id="btn-rep-609">🧾 Reporte 609</button>
+            <button class="btn btn-ghost" id="btn-rep-nomina-deptos">💰 Costo por depto.</button>
+            <button class="btn btn-ghost" id="btn-rep-empleados">Empleados</button>
+            <button class="btn btn-ghost" id="btn-rep-cedulas">Cédulas por vencer</button>
+            <button class="btn btn-ghost" id="btn-rep-aniversarios">Aniversarios</button>
+            <button class="btn btn-ghost" id="btn-rep-beneficios">Beneficios</button>
             <button class="btn btn-ghost" id="btn-rep-csv">Exportar Excel</button>
+            <button class="btn btn-ghost" id="btn-rep-imprimir">🖨️ Imprimir</button>
+            <button class="btn btn-ghost" id="btn-rep-pdf">📄 Exportar PDF</button>
           </div>
         </header>
         <div class="card table-card" id="report-content">
@@ -478,32 +507,12 @@
         <header class="view-header">
           <div>
             <h2>Correos electrónicos</h2>
-            <p>Envíe cédulas, nóminas y recordatorios por correo a los empleados.</p>
+            <p>Redacte correos para empleados y recordatorios. Se usará la aplicación de correo de tu equipo (mailto).</p>
           </div>
           <div class="view-actions">
             <button class="btn btn-ghost" id="btn-mail-log">📋 Historial</button>
           </div>
         </header>
-
-        <details class="card mail-config" id="smtp-config">
-          <summary>⚙️ Configuración SMTP <span class="muted">(solo se configura una vez, queda guardada)</span></summary>
-          <div class="form-grid" style="margin-top:14px">
-            <div class="field"><label for="smtp-host">Servidor SMTP (host)</label><input id="smtp-host" type="text" placeholder="smtp.gmail.com" /></div>
-            <div class="field"><label for="smtp-port">Puerto</label><input id="smtp-port" type="number" min="1" max="65535" placeholder="587" /></div>
-            <div class="field"><label for="smtp-secure">Conexión segura (SSL/TLS)</label>
-              <select id="smtp-secure"><option value="false">No (STARTTLS, puerto 587)</option><option value="true">Sí (SSL, puerto 465)</option></select>
-            </div>
-            <div class="field"><label for="smtp-user">Usuario</label><input id="smtp-user" type="text" placeholder="tu@correo.com" /></div>
-            <div class="field"><label for="smtp-pass">Contraseña / clave de aplicación</label><input id="smtp-pass" type="password" placeholder="••••••••" /></div>
-            <div class="field"><label for="smtp-from-name">Nombre del remitente</label><input id="smtp-from-name" type="text" placeholder="Recursos Humanos" /></div>
-            <div class="field"><label for="smtp-from-email">Correo del remitente</label><input id="smtp-from-email" type="text" placeholder="rrhh@empresa.com" /></div>
-            <div class="field"><label for="smtp-test-to">Enviar prueba a</label><input id="smtp-test-to" type="text" placeholder="tu@correo.com" /></div>
-          </div>
-          <div class="form-row">
-            <button class="btn btn-ghost" id="btn-mail-test">Enviar prueba</button>
-            <button class="btn btn-primary" id="btn-mail-save">Guardar configuración</button>
-          </div>
-        </details>
 
         <details class="card mail-config" id="ai-config">
           <summary>🤖 Inteligencia Artificial <span class="muted">(lectura automática de cédulas — las claves quedan guardadas en la base de datos)</span></summary>
@@ -517,40 +526,8 @@
         </details>
 
         <div class="card">
-          <h3>Envío personalizado</h3>
-          <div class="form-row">
-            <label>Mes
-              <select id="mail-mes"></select>
-            </label>
-            <label>Año
-              <select id="mail-anio"></select>
-            </label>
-            <label>Nómina
-              <select id="mail-nomina-tipo">
-                <option value="mensual">Mensual</option>
-                <option value="quincenal">Quincenal</option>
-                <option value="semanal">Semanal</option>
-                <option value="diario">Diario</option>
-              </select>
-            </label>
-          </div>
-          <div class="check-line"><label class="check-line"><input type="checkbox" id="mail-attach-cedula" checked /> Adjuntar cédula (PDF)</label>
-            <label class="check-line"><input type="checkbox" id="mail-attach-nomina" /> Adjuntar nómina (Excel)</label></div>
-          <p class="muted small">Seleccione los destinatarios (empleados con correo):</p>
-          <div class="form-row">
-            <input id="mail-filter" type="search" placeholder="Filtrar destinatarios…" />
-            <label class="check-line"><input type="checkbox" id="mail-select-all" /> Seleccionar todos</label>
-          </div>
-          <div id="mail-recipients" class="mail-recipients"></div>
-          <div class="form-row">
-            <button class="btn btn-primary" id="btn-mail-send">Enviar seleccionados</button>
-            <span id="mail-recipient-count" class="muted"></span>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Componer correo</h3>
-          <p class="muted small">Envía a todos los destinatarios seleccionados de la lista de arriba (correo masivo). Puede usar plantillas: los marcadores <b>{nombre}</b>, <b>{apellidos}</b>, <b>{puesto}</b> y <b>{departamento}</b> se reemplazan automáticamente con los datos de cada empleado.</p>
+          <h3>Componer correo (mailto)</h3>
+          <p class="muted small">Se abrirá la aplicación de correo de tu equipo con el mensaje pre-llenado. Puede usar plantillas: los marcadores <b>{nombre}</b>, <b>{apellidos}</b>, <b>{puesto}</b> y <b>{departamento}</b> se reemplazan con los datos de cada empleado.</p>
           <div>
             <p class="muted small" style="margin-bottom:6px">Plantillas rápidas:</p>
             <div class="form-row">
@@ -561,8 +538,8 @@
             </div>
           </div>
           <div class="form-stack">
-            <label>Para (adicional, separados por coma, opcional)
-              <input id="mail-to-extra" type="text" placeholder="otro@correo.com, tercero@correo.com" />
+            <label>Para (separados por coma, opcional)
+              <input id="mail-to-extra" type="text" placeholder="empleado@correo.com, otro@correo.com" />
             </label>
             <label>Asunto
               <input id="mail-subject" type="text" placeholder="Asunto del correo" />
@@ -570,21 +547,30 @@
             <label>Mensaje
               <textarea id="mail-message" rows="6" placeholder="Escriba el mensaje aquí…"></textarea>
             </label>
-            <div>
-              <button class="btn btn-ghost" id="btn-mail-add-files" type="button">📎 Adjuntar archivos…</button>
-              <input type="file" id="mail-files" multiple hidden />
-              <ul id="mail-files-list" class="mail-files-list"></ul>
-            </div>
             <div class="form-row">
-              <button class="btn btn-primary" id="btn-mail-send-custom">Enviar correo</button>
+              <button class="btn btn-primary" id="btn-mail-open">✉️ Abrir en la app de correo</button>
               <span id="mail-custom-count" class="muted"></span>
             </div>
           </div>
         </div>
 
         <div class="card">
+          <h3>Envío a empleados</h3>
+          <p class="muted small">Seleccione los destinatarios (empleados con correo). Al pulsar el botón, la app abrirá una ventana de correo por cada empleado para que los revise y envíe uno a uno.</p>
+          <div class="form-row">
+            <input id="mail-filter" type="search" placeholder="Filtrar destinatarios…" />
+            <label class="check-line"><input type="checkbox" id="mail-select-all" /> Seleccionar todos</label>
+          </div>
+          <div id="mail-recipients" class="mail-recipients"></div>
+          <div class="form-row">
+            <button class="btn btn-primary" id="btn-mail-send">✉️ Abrir correos seleccionados</button>
+            <span id="mail-recipient-count" class="muted"></span>
+          </div>
+        </div>
+
+        <div class="card">
           <h3>Contactos externos</h3>
-          <p class="muted small">Agenda guardada para enviar correos a personas o entidades fuera de la empresa (bancos, proveedores, etc.). Marque los que desee incluir en el envío.</p>
+          <p class="muted small">Agenda para personas o entidades fuera de la empresa (bancos, proveedores, etc.). Marque las que desee incluir en la copia (CC) del correo.</p>
           <div class="form-row">
             <input id="contacto-nombre" type="text" placeholder="Nombre (ej. Banco Popular)" style="min-width:220px" />
             <input id="contacto-email" type="text" placeholder="correo@entidad.com" style="min-width:220px" />
@@ -595,8 +581,8 @@
 
         <div class="card">
           <h3>Recordatorios automáticos</h3>
-          <p class="muted">Envía a cada empleado con correo sus recordatorios pendientes (cumpleaños, vencimiento de cédula, vacaciones próximas y aviso de pago de nómina), según la antelación configurada en Alertas.</p>
-          <button class="btn btn-primary" id="btn-mail-reminders">Enviar recordatorios</button>
+          <p class="muted">Genera un correo (mailto) por cada empleado con sus recordatorios pendientes (cumpleaños, vencimiento de cédula, vacaciones próximas y aviso de pago de nómina), según la antelación configurada en Alertas. Revísalos y envíalos desde tu app de correo.</p>
+          <button class="btn btn-primary" id="btn-mail-reminders">✉️ Generar recordatorios</button>
         </div>
 
         <div class="card hidden" id="mail-log-card">
@@ -693,6 +679,14 @@
             <input type="file" id="import-file" accept=".xlsx,.xls,.csv" class="hidden" />
           </div>
           <div id="import-preview" class="import-preview" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card hidden" id="salarios-maint-card">
+          <h3>🧹 Reiniciar historial de salarios</h3>
+          <p class="muted small">Útil cuando se cargaron salarios de prueba. Esto <strong>borra los cambios de salario registrados</strong> y deja como base el salario actual de cada empleado activo desde el 1 de enero del año, para que la regalía use solo los salarios reales. El módulo de cambios de salario sigue funcionando para cambios futuros. <strong>Ejecútelo después de cargar los salarios definitivos.</strong></p>
+          <div class="form-row" style="margin-top:10px">
+            <button class="btn btn-danger" id="btn-salarios-reset">🗑️ Reiniciar historial y re-baselinear</button>
+          </div>
         </div>
 
         <div class="card">

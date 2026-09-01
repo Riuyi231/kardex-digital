@@ -122,6 +122,7 @@
     $('btn-import-excel-header').classList.toggle('hidden', !canEdit());
     $('btn-historial-finiquitos').classList.toggle('hidden', !canEdit());
     $('btn-inactivos-excel').classList.toggle('hidden', !canEdit());
+    $('salarios-maint-card').classList.toggle('hidden', !isAdmin());
     go('dashboard');
     loadNotificaciones();
   }
@@ -438,11 +439,9 @@
     if (name === 'sistema') loadSistema();
   }
 
-  /* ============ Inicio / Dashboard ============ */
+  /* ============ Dashboard / Inicio ============ */
   function escLabel(v) { return esc(String(v == null ? '' : v)); }
-
   function renderBarChart(el, items, opts) {
-    // items: [{label, value, color?}]. Genera un gráfico de barras verticales en CSS puro.
     const o = opts || {};
     const max = Math.max(1, ...items.map(i => i.value));
     const format = o.format || ((v) => v);
@@ -453,21 +452,18 @@
         <div class="bar-label" title="${esc(it.label)}">${escLabel(it.label)}</div>
       </div>`).join('');
   }
-
-  function monthLabel(offset) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - offset);
-    return d.toLocaleDateString('es', { month: 'short' }).replace('.', '') + ' ' + d.getFullYear().toString().slice(-2);
-  }
-
   function monthKey(offset) {
     const d = new Date();
     d.setDate(1);
     d.setMonth(d.getMonth() - offset);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
-
+  function monthLabel(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return d.toLocaleDateString('es', { month: 'short' }).replace('.', '') + ' ' + d.getFullYear().toString().slice(-2);
+  }
   function fmtDshDate(v) {
     if (!v) return '—';
     const s = String(v);
@@ -475,15 +471,21 @@
     if (isNaN(n.getTime())) return '—';
     return n.toLocaleDateString('es-DO');
   }
-
   async function loadDashboard() {
     try {
-      const [listRes, statsRes] = await Promise.all([window.api.listEmployees('', ''), window.api.getStats()]);
+      const [listRes, statsRes, notifRes] = await Promise.all([
+        window.api.listEmployees('', ''),
+        window.api.getStats(),
+        window.api.listNotificaciones()
+      ]);
       if (!listRes.ok) throw new Error(listRes.error);
       const rows = (listRes.data || []).slice();
+      const stats = (statsRes && statsRes.data) || {};
+      const active = stats.activos != null ? stats.activos : rows.filter(r => r.status === 'activo').length;
+      const inactive = stats.inactivos != null ? stats.inactivos : rows.filter(r => r.status === 'inactivo').length;
 
-      const activosCount = rows.filter(r => r.status === 'activo').length;
-      const inactivosCount = rows.filter(r => r.status === 'inactivo').length;
+      const activosCount = active;
+      const inactivosCount = inactive;
       const total = rows.length;
       const conCedula = rows.filter(r => r.has_images).length;
 
@@ -493,20 +495,17 @@
       $('dsh-cedula').textContent = conCedula;
       $('dashboard-subtitle').textContent = 'Resumen general · ' + new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-      // Gráfico por departamento (de empleados activos)
       const deptMap = {};
       rows.forEach(r => { if (r.status === 'activo') { const k = (r.departamento || 'Sin departamento'); deptMap[k] = (deptMap[k] || 0) + 1; } });
       const deptItems = Object.keys(deptMap).map(k => ({ label: k, value: deptMap[k], color: '#3b82f6' })).sort((a, b) => b.value - a.value).slice(0, 8);
       if (!deptItems.length) $('dash-dept-card').classList.add('hidden');
       else { $('dash-dept-card').classList.remove('hidden'); renderBarChart($('dash-dept-chart'), deptItems); }
 
-      // Gráfico de estado
       renderBarChart($('dash-status-chart'), [
         { label: 'Activos', value: activosCount, color: '#10b981' },
         { label: 'Inactivos', value: inactivosCount, color: '#f59e0b' }
       ]);
 
-      // Gráfico de altas por mes (últimos 6 meses)
       const monthly = [];
       for (let i = 5; i >= 0; i--) {
         const k = monthKey(i);
@@ -521,7 +520,6 @@
       });
       renderBarChart($('dash-montly-chart'), monthly.map(m => ({ label: m.label, value: m.count, color: '#8b5cf6' })));
 
-      // Registros recientes
       const recent = rows.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 8);
       $('dash-recent-note').textContent = 'Los más recientes primero (últimos ' + recent.length + ' de ' + total + ')';
       $('dashboard-empty').classList.toggle('hidden', recent.length > 0);
@@ -540,22 +538,58 @@
       $('dashboard-recent-tbody').querySelectorAll('[data-open-emp]').forEach(btn => {
         btn.addEventListener('click', () => openEmployee(btn.getAttribute('data-open-emp')));
       });
+
+      // Próximas alertas
+      const alerts = ((notifRes && notifRes.data && notifRes.data.events) || []).slice(0, 6);
+      const notifBox = $('dash-alertas');
+      if (!alerts.length) {
+        notifBox.innerHTML = '<p class="muted small">No hay alertas próximas.</p>';
+      } else {
+        notifBox.innerHTML = alerts.map(a => `<div class="dash-alerta"><span>${esc(a.titulo)}</span><em>${a.dias < 0 ? 'Vencida' : a.dias === 0 ? 'Hoy' : 'En ' + a.dias + ' día' + (a.dias === 1 ? '' : 's')}</em></div>`).join('');
+      }
+
+      // Nómina
+      const conSalario = rows.filter(r => r.status === 'activo' && Number(r.salario) > 0);
+      const totalSalarial = conSalario.reduce((s, r) => s + (Number(r.salario) || 0), 0);
+      const n = new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' });
+      $('dash-nomina').innerHTML =
+        `<div class="dash-alerta"><span>Empleados activos con salario</span><em>${conSalario.length}</em></div>` +
+        `<div class="dash-alerta"><span>Nómina mensual estimada</span><em>${n.format(totalSalarial)}</em></div>` +
+        `<div class="dash-alerta"><span>Salario promedio</span><em>${conSalario.length ? n.format(Math.round(totalSalarial / conSalario.length)) : n.format(0)}</em></div>`;
     } catch (e) {
       toast('Error cargando el panel: ' + ((e && e.message) || 'error'), 'error');
     }
   }
 
   /* ============ Empleados ============ */
+  let empPage = 1;
+  let empAllRows = [];
+  const EMP_PAGE_SIZE = 10;
+
   async function loadEmployees() {
     const search = $('search-input').value;
     try {
       const res = await window.api.listEmployees(search, 'activo');
       if (!res.ok) throw new Error(res.error);
-      const rows = res.data;
-      $('employees-count').textContent = rows.length + ' registro(s)';
-      $('employees-empty').classList.toggle('hidden', rows.length > 0);
-      const tb = $('employees-tbody');
-      tb.innerHTML = rows.map(r => `
+      empAllRows = res.data;
+      empPage = 1;
+      renderEmployeesPage();
+      loadStats();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  function renderEmployeesPage() {
+    const rows = empAllRows;
+    const pages = Math.max(1, Math.ceil(rows.length / EMP_PAGE_SIZE));
+    if (empPage > pages) empPage = pages;
+    const start = (empPage - 1) * EMP_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + EMP_PAGE_SIZE);
+    $('employees-count').textContent = rows.length + ' registro(s)';
+    $('employees-empty').classList.toggle('hidden', rows.length > 0);
+    const tb = $('employees-tbody');
+    tb.innerHTML = pageRows.map(r => `
         <tr>
           <td><strong>${esc(r.cedula || '—')}</strong></td>
           <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
@@ -576,26 +610,45 @@
             ${canEdit() ? `<button class="btn btn-danger btn-sm" data-fire="${r.id}">Dar de baja</button>` : ''}
           </td>
         </tr>`).join('');
-      tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
-      tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
-      tb.querySelectorAll('[data-fire]').forEach(b => b.addEventListener('click', () => showLiquidacion(Number(b.dataset.fire))));
+    tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
+    tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
+    tb.querySelectorAll('[data-fire]').forEach(b => b.addEventListener('click', () => showLiquidacion(Number(b.dataset.fire))));
+    const bar = $('emp-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('emp-page-info').textContent = `Página ${empPage} de ${pages} · ${rows.length} registro(s)`;
+    $('emp-prev').disabled = empPage <= 1;
+    $('emp-next').disabled = empPage >= pages;
+  }
+
+  /* ============ Inactivos ============ */
+  let inactivePage = 1;
+  let inactiveAllRows = [];
+  const INACTIVE_PAGE_SIZE = 10;
+
+  async function loadInactiveEmployees() {
+    const search = $('search-inactive').value;
+    try {
+      const res = await window.api.listEmployees(search, 'inactivo');
+      if (!res.ok) throw new Error(res.error);
+      inactiveAllRows = res.data;
+      inactivePage = 1;
+      renderInactivePage();
       loadStats();
     } catch (e) {
       toast(e.message, 'error');
     }
   }
 
-  /* ============ Inactivos ============ */
-  async function loadInactiveEmployees() {
-    const search = $('search-inactive').value;
-    try {
-      const res = await window.api.listEmployees(search, 'inactivo');
-      if (!res.ok) throw new Error(res.error);
-      const rows = res.data;
-      $('inactive-count').textContent = rows.length + ' registro(s)';
-      $('inactive-empty').classList.toggle('hidden', rows.length > 0);
-      const tb = $('inactive-tbody');
-      tb.innerHTML = rows.map(r => `
+  function renderInactivePage() {
+    const rows = inactiveAllRows;
+    const pages = Math.max(1, Math.ceil(rows.length / INACTIVE_PAGE_SIZE));
+    if (inactivePage > pages) inactivePage = pages;
+    const start = (inactivePage - 1) * INACTIVE_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + INACTIVE_PAGE_SIZE);
+    $('inactive-count').textContent = rows.length + ' registro(s)';
+    $('inactive-empty').classList.toggle('hidden', rows.length > 0);
+    const tb = $('inactive-tbody');
+    tb.innerHTML = pageRows.map(r => `
         <tr>
           <td><strong>${esc(r.cedula || '—')}</strong></td>
           <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
@@ -611,13 +664,14 @@
             ${canEdit() ? `<button class="btn btn-primary btn-sm" data-reactivate="${r.id}">Reactivar</button>` : ''}
           </td>
         </tr>`).join('');
-      tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
-      tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
-      tb.querySelectorAll('[data-reactivate]').forEach(b => b.addEventListener('click', () => showReintegrar(Number(b.dataset.reactivate))));
-      loadStats();
-    } catch (e) {
-      toast(e.message, 'error');
-    }
+    tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
+    tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
+    tb.querySelectorAll('[data-reactivate]').forEach(b => b.addEventListener('click', () => showReintegrar(Number(b.dataset.reactivate))));
+    const bar = $('inactive-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('inactive-page-info').textContent = `Página ${inactivePage} de ${pages} · ${rows.length} registro(s)`;
+    $('inactive-prev').disabled = inactivePage <= 1;
+    $('inactive-next').disabled = inactivePage >= pages;
   }
 
   /* ============ Estadísticas ============ */
@@ -1737,6 +1791,76 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function loadReportNominaDepartamentos() {
+    try {
+      const res = await window.api.reporteNominaDepartamentos();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(d => [d.departamento, d.empleados, fmtRD(d.total_salario), d.mensual || 0, d.quincenal || 0, d.semanal || 0]);
+      if (rows.length) {
+        const tot = res.data.reduce((s, d) => s + Number(d.total_salario), 0);
+        const emp = res.data.reduce((s, d) => s + Number(d.empleados), 0);
+        rows.push(['TOTALES', emp, fmtRD(tot), '', '', '']);
+      }
+      renderReport('Costo de nómina por departamento', ['Departamento', 'Empleados', 'Nómina mensual', 'Mensual', 'Quincenal', 'Semanal'],
+        rows, 'No hay empleados activos con salario.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportEmpleados() {
+    try {
+      const res = await window.api.reporteEmpleados();
+      if (!res.ok) throw new Error(res.error);
+      renderReport('Informe de empleados activos', ['Cédula', 'Nombre', 'Puesto', 'Departamento', 'Salario', 'Tipo', 'Ingreso', 'Contrato', 'ARS', 'AFP'],
+        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.puesto, r.departamento, fmtRD(r.salario), r.tipo_salario, r.fecha_ingreso, CONTRATO_LABEL[r.tipo_contrato] || r.tipo_contrato || '', r.ars, r.afp]),
+        'No hay empleados activos.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportCedulasVencer() {
+    try {
+      const res = await window.api.reporteCedulasVencer();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(r => {
+        let estado = '—';
+        if (r.fecha_vencimiento) {
+          const p = r.fecha_vencimiento.split('/');
+          const d = p.length === 3 ? new Date(+p[2], +p[1] - 1, +p[0]) : null;
+          const diff = d ? Math.ceil((d - new Date()) / 86400000) : null;
+          estado = diff == null ? '—' : diff < 0 ? 'Vencida' : diff <= 90 ? `Vence en ${diff} días` : 'Vigente';
+        }
+        return [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_vencimiento, estado, r.puesto, r.departamento];
+      });
+      renderReport('Cédulas por vencer', ['Cédula', 'Nombre', 'Vencimiento', 'Estado', 'Puesto', 'Departamento'],
+        rows, 'Sin cédulas con vencimiento registrado.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportAniversarios() {
+    const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    try {
+      const res = await window.api.reporteAniversarios(anio);
+      if (!res.ok) throw new Error(res.error);
+      renderReport('Aniversarios laborales ' + anio, ['Cédula', 'Nombre', 'Fecha de ingreso', 'Años', 'Puesto', 'Departamento'],
+        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_ingreso, r.anios, r.puesto, r.departamento]),
+        'Sin aniversarios calculados para ' + anio + '.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportBeneficios() {
+    try {
+      const res = await window.api.reporteBeneficios();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.ars || '—', r.afp || '—', r.nss || '—', r.puesto, r.departamento]);
+      if (rows.length) {
+        const arsCount = (res.data || []).filter(r => r.ars).length;
+        const afpCount = (res.data || []).filter(r => r.afp).length;
+        rows.push(['TOTALES', rows.length, `${arsCount} con ARS`, `${afpCount} con AFP`, '', '', '']);
+      }
+      renderReport('Informe de beneficios (ARS / AFP / NSS)', ['Cédula', 'Nombre', 'ARS', 'AFP', 'NSS', 'Puesto', 'Departamento'],
+        rows, 'No hay empleados activos.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   async function loadReport609() {
     const anio = Number($('rep-anio').value) || new Date().getFullYear();
     try {
@@ -1778,6 +1902,50 @@
     }]);
   }
 
+  function buildReportHtml() {
+    if (!lastReport || !lastReport.rows.length) {
+      toast('Genere primero un reporte', 'error');
+      return null;
+    }
+    const rowsHtml = lastReport.rows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('');
+    return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+      <title>${esc(lastReportTitle || 'Reporte')}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 24px; color: #1a2030; }
+        h2 { margin: 0 0 4px; }
+        .sub { color: #6b7280; font-size: 12px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #1e3a8a; color: #fff; text-align: left; padding: 8px; }
+        td { border: 1px solid #d1d5db; padding: 6px 8px; }
+        tr:nth-child(even) td { background: #f3f4f6; }
+      </style></head><body>
+      <h2>${esc(lastReportTitle || 'Reporte')}</h2>
+      <div class="sub">Generado el ${new Date().toLocaleString('es-DO')}</div>
+      <table><thead><tr>${lastReport.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </body></html>`;
+  }
+
+  async function printReport() {
+    const html = buildReportHtml();
+    if (!html) return;
+    try {
+      const res = await window.api.reportePrint(lastReportTitle, html);
+      if (!res.ok) throw new Error(res.error);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function exportReportPdf() {
+    const html = buildReportHtml();
+    if (!html) return;
+    try {
+      const res = await window.api.reportePdf(lastReportTitle, html);
+      if (!res.ok) throw new Error(res.error);
+      if (res.data) toast('PDF guardado: ' + res.data, 'success', 5000);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   /* ============ Notificaciones ============ */
   const NOTIF_TIPOS = [
     ['pago', '💰 Pagos de nómina'],
@@ -1807,12 +1975,14 @@
     $('notif-totals').innerHTML = cards.map(([l, v, cls]) =>
       `<div class="card stat-card"><div class="stat-label">${esc(l)}</div><div class="stat-value${cls}">${v}</div></div>`).join('');
     const box = $('notif-list');
-    if (!events.length) {
+    const descartadas = new Set(getNotifDismissed());
+    const visibles = events.filter(e => !descartadas.has(e.id));
+    if (!visibles.length) {
       box.innerHTML = '<h3 style="padding:16px 20px 0">Alertas</h3><div class="empty-state"><p>No hay alertas en los próximos días.</p></div>';
       return;
     }
     box.innerHTML = '<h3 style="padding:16px 20px 0">Alertas</h3>' + NOTIF_TIPOS.map(([t, label]) => {
-      const group = events.filter(e => e.tipo === t);
+      const group = visibles.filter(e => e.tipo === t);
       if (!group.length) return '';
       return `<h4 class="notif-group">${label} <span>(${group.length})</span></h4>` + group.map(e => {
         const badge = e.dias < 0 ? '<span class="badge-warn">Vencida</span>'
@@ -1821,9 +1991,20 @@
         return `<div class="notif-item">
           <div class="notif-item-main"><strong>${esc(e.titulo)}</strong><div class="muted small">${esc(e.descripcion)}</div></div>
           <div class="notif-item-date"><span>${esc(e.fecha)}</span> ${badge}</div>
+          <button class="notif-dismiss" data-dismiss-id="${esc(e.id)}" title="Descartar alerta">✕</button>
         </div>`;
       }).join('');
     }).join('');
+  }
+
+  function getNotifDismissed() {
+    try { return JSON.parse(localStorage.getItem('notif_dismissed') || '[]'); } catch (e) { return []; }
+  }
+  function dismissNotif(id) {
+    const set = new Set(getNotifDismissed());
+    set.add(id);
+    localStorage.setItem('notif_dismissed', JSON.stringify([...set]));
+    loadNotificaciones();
   }
 
   async function loadNotificaciones() {
@@ -2041,6 +2222,17 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function resetSalarioHistorial() {
+    const ok = confirm('¿Reiniciar el historial de salarios?\n\nBorra todos los cambios de salario registrados y deja el salario actual de cada empleado activo como base desde el 1 de enero del año.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    try {
+      const res = await window.api.resetSalarioHistorial();
+      if (!res.ok) throw new Error(res.error);
+      const data = res.data || {};
+      toast(`Historial reiniciado: base aplicada a ${data.registros || 0} empleados activos (año ${data.anio || ''}).`, 'success', 6000);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   function fmtSize(bytes) {
     if (bytes == null) return '';
     const kb = bytes / 1024;
@@ -2161,21 +2353,10 @@
 
   /* ============ Correos ============ */
   let mailEmployees = [];
-  let mailFiles = [];
   let mailContacts = [];
   async function loadCorreo() {
     try {
-      const [cfg, emps, contacts] = await Promise.all([window.api.getCorreoSettings(), window.api.listEmployees('', 'activo'), window.api.contactosList()]);
-      if (cfg.ok && cfg.data) {
-        $('smtp-host').value = cfg.data.smtp_host || '';
-        $('smtp-port').value = cfg.data.smtp_port || '';
-        $('smtp-secure').value = String(cfg.data.smtp_secure || 'false');
-        $('smtp-user').value = cfg.data.smtp_user || '';
-        $('smtp-pass').value = cfg.data.smtp_pass || '';
-        $('smtp-from-name').value = cfg.data.smtp_from_name || '';
-        $('smtp-from-email').value = cfg.data.smtp_from_email || '';
-        $('smtp-test-to').value = cfg.data.smtp_test_to || '';
-      }
+      const [emps, contacts] = await Promise.all([window.api.listEmployees('', 'activo'), window.api.contactosList()]);
       if (emps.ok) {
         mailEmployees = (emps.data || []).filter(e => (e.email || '').trim());
       }
@@ -2190,17 +2371,6 @@
         $('ai-openai-key').value = ai.data.openai || '';
       }
     } catch (e) { /* sin permisos */ }
-    const ms = $('mail-mes');
-    if (ms.options.length === 0) {
-      const now = new Date().getMonth();
-      ms.innerHTML = MESES_ES.map((m, i) => `<option value="${i + 1}" ${i === now ? 'selected' : ''}>${m}</option>`).join('');
-    }
-    const anio = $('mail-anio');
-    if (anio.options.length === 0) {
-      const y = new Date().getFullYear();
-      anio.innerHTML = [y - 1, y, y + 1].map(v => `<option value="${v}">${v}</option>`).join('');
-      anio.value = String(y);
-    }
     renderMailRecipients();
     renderMailContacts();
   }
@@ -2274,23 +2444,6 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  async function saveCorreoSettings() {
-    try {
-      const res = await window.api.saveCorreoSettings({
-        smtp_host: $('smtp-host').value.trim(),
-        smtp_port: $('smtp-port').value.trim(),
-        smtp_secure: $('smtp-secure').value,
-        smtp_user: $('smtp-user').value.trim(),
-        smtp_pass: $('smtp-pass').value,
-        smtp_from_name: $('smtp-from-name').value.trim(),
-        smtp_from_email: $('smtp-from-email').value.trim(),
-        smtp_test_to: $('smtp-test-to').value.trim()
-      });
-      if (!res.ok) throw new Error(res.error);
-      toast('Configuración SMTP guardada', 'success');
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
   async function saveAiSettings() {
     try {
       const res = await window.api.saveAiSettings({
@@ -2306,44 +2459,59 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  async function testCorreo() {
-    try {
-      const res = await window.api.testCorreo();
-      if (!res.ok) throw new Error(res.error);
-      toast('Correo de prueba enviado a ' + res.data.to, 'success', 5000);
-    } catch (e) { toast(e.message, 'error'); }
+  function fillTemplate(text, e) {
+    return String(text || '')
+      .replace(/\{nombre\}/g, e.nombres || '')
+      .replace(/\{apellidos\}/g, e.apellidos || '')
+      .replace(/\{puesto\}/g, e.puesto || '')
+      .replace(/\{departamento\}/g, e.departamento || '');
+  }
+
+  function openMailtoFor(to, subject, body, cc) {
+    return window.api.openMailto(to, subject, body, cc);
+  }
+
+  function selectedMailEmployees() {
+    const ids = selectedMailIds();
+    return mailEmployees.filter(e => ids.includes(e.id));
   }
 
   async function sendSelectedMail() {
-    const ids = selectedMailIds();
-    if (!ids.length) { toast('Seleccione al menos un destinatario', 'error'); return; }
-    const mes = Number($('mail-mes').value) || new Date().getMonth() + 1;
-    const anio = Number($('mail-anio').value) || new Date().getFullYear();
-    const vista = $('mail-nomina-tipo').value || 'mensual';
-    const attachCedula = $('mail-attach-cedula').checked;
-    const attachNomina = $('mail-attach-nomina').checked;
-    if (!attachCedula && !attachNomina) { toast('Marque al menos un adjunto (cédula o nómina)', 'error'); return; }
+    const emps = selectedMailEmployees();
+    if (!emps.length) { toast('Seleccione al menos un destinatario', 'error'); return; }
+    const subject = $('mail-subject').value.trim();
+    const body = $('mail-message').value;
+    const cc = selectedContactEmails().join(', ');
     try {
-      let total = 0;
-      if (attachCedula) {
-        const r = await window.api.sendCedulas(ids);
-        if (!r.ok) throw new Error(r.error);
-        total += r.data.sent;
+      let opened = 0;
+      for (const e of emps) {
+        await openMailtoFor(e.email, fillTemplate(subject, e) || `Comunicado para ${e.nombres} ${e.apellidos}`, fillTemplate(body, e), cc);
+        opened++;
       }
-      if (attachNomina) {
-        const r = await window.api.sendNomina(mes, anio, ids, vista);
-        if (!r.ok) throw new Error(r.error);
-        total += r.data.sent;
-      }
-      toast(total + ' correo(s) enviado(s)', 'success', 5000);
+      toast(opened + ' correo(s) abierto(s) en tu app de correo', 'success', 5000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function sendMailReminders() {
     try {
-      const res = await window.api.sendReminders();
+      const res = await window.api.listNotificaciones();
       if (!res.ok) throw new Error(res.error);
-      toast(res.data.sent + ' recordatorio(s) enviado(s)', 'success', 5000);
+      const events = res.data && res.data.events ? res.data.events : (Array.isArray(res.data) ? res.data : []);
+      const emps = mailEmployees.filter(e => e.id != null && e.email);
+      let opened = 0;
+      for (const e of emps) {
+        const full = (e.nombres + ' ' + e.apellidos).toLowerCase();
+        const mine = events.filter(ev =>
+          ev.titulo && ev.titulo.toLowerCase().includes(full)
+        );
+        if (!mine.length) continue;
+        const subject = 'Recordatorios pendientes — ' + e.nombres + ' ' + e.apellidos;
+        const items = mine.map(ev => '• ' + (ev.titulo || ev.descripcion || ''));
+        const body = `Estimado/a ${e.nombres}:\n\nLe recordamos lo siguiente en relación con su expediente:\n\n${items.join('\n')}\n\nReciba un cordial saludo.\nAtentamente,\nRecursos Humanos`;
+        await openMailtoFor(e.email, subject, body);
+        opened++;
+      }
+      toast(opened ? opened + ' recordatorio(s) generado(s) en tu app de correo' : 'No hay recordatorios pendientes para empleados con correo', opened ? 'success' : 'info', 5000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -2359,70 +2527,34 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  function b64FromArrayBuffer(buf) {
-    const bytes = new Uint8Array(buf);
-    let bin = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(bin);
-  }
-
-  function fmtBytes(n) {
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-    return (n / 1048576).toFixed(1) + ' MB';
-  }
-
-  function renderMailFiles() {
-    const ul = $('mail-files-list');
-    ul.innerHTML = mailFiles.map((f, i) => `
-      <li><span>📎 ${esc(f.name)} <span class="muted">(${fmtBytes(f.size)})</span></span>
-        <button type="button" class="btn btn-danger btn-sm" data-rm="${i}">Quitar</button></li>`).join('');
-    ul.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => {
-      mailFiles.splice(Number(b.dataset.rm), 1);
-      renderMailFiles();
-    }));
-  }
-
-  async function addMailFiles() {
-    const input = $('mail-files');
-    for (const f of input.files) {
-      if (mailFiles.some(x => x.name === f.name && x.size === f.size)) continue;
-      mailFiles.push({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', data: b64FromArrayBuffer(await f.arrayBuffer()) });
-    }
-    input.value = '';
-    renderMailFiles();
-    updateCustomCount();
-  }
-
   function updateCustomCount() {
     const extra = selectedContactEmails().length;
     $('mail-custom-count').textContent = (selectedMailIds().length ? selectedMailIds().length + ' empleado(s)' : 'Sin empleados') +
-      (extra ? ' + ' + extra + ' contacto(s)' : '') +
-      (mailFiles.length ? ' · ' + mailFiles.length + ' archivo(s)' : '');
+      (extra ? ' + ' + extra + ' contacto(s) en CC' : '');
   }
 
-  async function sendCustomMail() {
+  async function openComposedMail() {
     const subject = $('mail-subject').value.trim();
-    if (!subject) { toast('Indique el asunto del correo', 'error'); return; }
-    const extraTo = [$('mail-to-extra').value.trim(), ...selectedContactEmails()].filter(Boolean).join(', ');
+    const body = $('mail-message').value;
+    if (!subject && !body) { toast('Redacte un asunto o mensaje antes de abrir el correo', 'info'); return; }
+    const emps = selectedMailEmployees();
+    const extraTo = [$('mail-to-extra').value.trim(), ...selectedContactEmails()].filter(Boolean);
+    const cc = extraTo.join(', ');
     try {
-      const res = await window.api.sendCorreoCustom({
-        employeeIds: selectedMailIds(),
-        to: extraTo,
-        subject,
-        text: $('mail-message').value,
-        attachments: mailFiles.map(f => ({ filename: f.name, contentType: f.type, content: f.data }))
-      });
-      if (!res.ok) throw new Error(res.error);
-      toast(res.data.sent + ' correo(s) enviado(s)', 'success', 5000);
-      $('mail-message').value = '';
-      $('mail-subject').value = '';
-      mailFiles = [];
-      renderMailFiles();
-      updateCustomCount();
+      let opened = 0;
+      if (emps.length) {
+        for (const e of emps) {
+          await openMailtoFor(e.email, fillTemplate(subject, e), fillTemplate(body, e), cc);
+          opened++;
+        }
+      } else if (extraTo.length) {
+        await openMailtoFor(extraTo.join(','), subject, body);
+        opened = 1;
+      } else {
+        toast('Indique un destinatario (empleado, correo o contacto en CC)', 'error');
+        return;
+      }
+      toast(opened + ' correo(s) abierto(s) en tu app de correo', 'success', 4000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -2661,6 +2793,7 @@
     if (!modalRecord) return;
     const editing = !!editId;
     const readonly = !canEdit();
+    setModalTab('identificacion');
     $('employee-modal-title').textContent = editing ? 'Expediente #' + editId : 'Nuevo expediente';
     $('btn-save-employee').textContent = editing ? 'Guardar cambios' : 'Guardar expediente';
     $('btn-save-employee').disabled = readonly;
@@ -2705,6 +2838,27 @@
     $('employee-modal').classList.add('hidden');
     editId = null;
     modalRecord = null;
+    closeCedulaLightbox();
+  }
+
+  function setModalTab(name) {
+    document.querySelectorAll('#employee-modal .modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('#employee-modal .tab-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+  }
+
+  function showCedulaAmpliada(side) {
+    const src = modalRecord && (side === 'frente' ? modalRecord.frente : modalRecord.reverso);
+    const img = $('lightbox-img');
+    const title = side === 'frente' ? 'Cédula — Frente' : 'Cédula — Reverso';
+    if (!src) { toast('No hay imagen de ' + (side === 'frente' ? 'frente' : 'reverso') + ' para mostrar.', 'info'); return; }
+    $('lightbox-title').textContent = title;
+    img.src = src;
+    $('cedula-lightbox').classList.remove('hidden');
+  }
+
+  function closeCedulaLightbox() {
+    $('cedula-lightbox').classList.add('hidden');
+    $('lightbox-img').src = '';
   }
 
   function setLoading(on, text) {
@@ -2935,12 +3089,17 @@
     document.querySelectorAll('.nav-item').forEach(n =>
       n.addEventListener('click', () => go(n.dataset.view)));
 
-    $('btn-open-empleados').addEventListener('click', () => go('empleados'));
-
     let searchTimer = null;
     $('search-input').addEventListener('input', () => {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(loadEmployees, 300);
+    });
+
+    $('emp-prev').addEventListener('click', () => {
+      if (empPage > 1) { empPage--; renderEmployeesPage(); }
+    });
+    $('emp-next').addEventListener('click', () => {
+      if (empPage < Math.ceil(empAllRows.length / EMP_PAGE_SIZE)) { empPage++; renderEmployeesPage(); }
     });
 
     let searchInactiveTimer = null;
@@ -2949,12 +3108,21 @@
       searchInactiveTimer = setTimeout(loadInactiveEmployees, 300);
     });
 
+    $('inactive-prev').addEventListener('click', () => {
+      if (inactivePage > 1) { inactivePage--; renderInactivePage(); }
+    });
+    $('inactive-next').addEventListener('click', () => {
+      if (inactivePage < Math.ceil(inactiveAllRows.length / INACTIVE_PAGE_SIZE)) { inactivePage++; renderInactivePage(); }
+    });
+
     $('btn-new-employee').addEventListener('click', () => {
       editId = null;
       lastFrontFile = null;
       modalRecord = emptyRecord();
       showEmployeeModal();
     });
+
+    $('btn-open-empleados').addEventListener('click', () => go('empleados'));
 
     $('btn-export-cedulas-pdf').addEventListener('click', exportCedulasPdf);
     $('btn-export-cedula-pdf').addEventListener('click', exportCedulaPdf);
@@ -2988,6 +3156,22 @@
     });
 
     $('btn-swap-sides').addEventListener('click', swapSides);
+
+    document.querySelectorAll('#employee-modal .modal-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        setModalTab(tab.dataset.tab);
+        tab.scrollIntoView({ block: 'nearest' });
+      });
+    });
+
+    document.querySelectorAll('.btn-view-full').forEach(btn => {
+      btn.addEventListener('click', () => showCedulaAmpliada(btn.getAttribute('data-side')));
+    });
+    $('lightbox-close').addEventListener('click', closeCedulaLightbox);
+    $('lightbox-close-btn').addEventListener('click', closeCedulaLightbox);
+    $('cedula-lightbox').addEventListener('click', (e) => {
+      if (e.target === $('cedula-lightbox')) closeCedulaLightbox();
+    });
 
     $('btn-reprocess').addEventListener('click', async () => {
       if (!lastFrontFile) return;
@@ -3066,9 +3250,17 @@
     $('btn-rep-cumpleanos').addEventListener('click', loadReportCumpleanos);
     $('btn-rep-deptos').addEventListener('click', loadReportDepartamentos);
     $('btn-rep-609').addEventListener('click', loadReport609);
+    $('btn-rep-nomina-deptos').addEventListener('click', loadReportNominaDepartamentos);
+    $('btn-rep-empleados').addEventListener('click', loadReportEmpleados);
+    $('btn-rep-cedulas').addEventListener('click', loadReportCedulasVencer);
+    $('btn-rep-aniversarios').addEventListener('click', loadReportAniversarios);
+    $('btn-rep-beneficios').addEventListener('click', loadReportBeneficios);
     $('btn-rep-csv').addEventListener('click', exportReportExcel);
+    $('btn-rep-imprimir').addEventListener('click', printReport);
+    $('btn-rep-pdf').addEventListener('click', exportReportPdf);
 
     $('btn-backup-create').addEventListener('click', createBackup);
+    $('btn-salarios-reset').addEventListener('click', resetSalarioHistorial);
     $('btn-backup-save-settings').addEventListener('click', saveBackupSettings);
     $('btn-backup-dir').addEventListener('click', pickBackupDir);
     $('btn-backup-restore-file').addEventListener('click', restoreBackupFile);
@@ -3080,16 +3272,16 @@
     $('btn-notif-test').addEventListener('click', testNotificacion);
     $('btn-notif-refresh').addEventListener('click', () => { loadNotificaciones(); loadNotifSettings(); });
     $('btn-notif-save').addEventListener('click', saveNotifSettings);
+    $('notif-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('.notif-dismiss');
+      if (btn) dismissNotif(btn.dataset.dismissId);
+    });
 
-    $('btn-mail-save').addEventListener('click', saveCorreoSettings);
-    $('btn-mail-test').addEventListener('click', testCorreo);
     $('btn-ai-save').addEventListener('click', saveAiSettings);
     $('btn-mail-send').addEventListener('click', sendSelectedMail);
     $('btn-mail-reminders').addEventListener('click', sendMailReminders);
     $('btn-mail-log').addEventListener('click', loadMailLog);
-    $('btn-mail-add-files').addEventListener('click', () => $('mail-files').click());
-    $('mail-files').addEventListener('change', addMailFiles);
-    $('btn-mail-send-custom').addEventListener('click', sendCustomMail);
+    $('btn-mail-open').addEventListener('click', openComposedMail);
     $('btn-contacto-add').addEventListener('click', addMailContact);
     $('contacto-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') addMailContact(); });
     $('mail-contacts').addEventListener('change', updateCustomCount);
