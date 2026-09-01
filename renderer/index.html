@@ -66,7 +66,8 @@
         <span class="nav-label">KARDEX Digital</span>
       </div>
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-view="empleados" data-tooltip="Empleados"><span class="nav-icon">📋</span><span class="nav-label">Empleados</span></button>
+        <button class="nav-item active" data-view="dashboard" data-tooltip="Inicio"><span class="nav-icon">📊</span><span class="nav-label">Inicio</span></button>
+        <button class="nav-item" data-view="empleados" data-tooltip="Empleados"><span class="nav-icon">📋</span><span class="nav-label">Empleados</span></button>
         <button class="nav-item" data-view="inactivos" data-tooltip="Inactivos"><span class="nav-icon">🗂️</span><span class="nav-label">Inactivos</span></button>
         <button class="nav-item hidden" data-view="nomina" id="nav-nomina" data-tooltip="Nómina"><span class="nav-icon">💰</span><span class="nav-label">Nómina</span></button>
         <button class="nav-item hidden" data-view="reportes" id="nav-reportes" data-tooltip="Reportes"><span class="nav-icon">📑</span><span class="nav-label">Reportes</span></button>
@@ -89,6 +90,79 @@
     </aside>
 
     <main class="main">
+      <!-- Inicio / Dashboard -->
+      <section id="view-dashboard" class="view">
+        <header class="view-header">
+          <div>
+            <h2>Panel de control</h2>
+            <p id="dashboard-subtitle">Resumen general de los registros de la organización.</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btn-open-empleados">Ver expedientes →</button>
+          </div>
+        </header>
+
+        <!-- KPI cards -->
+        <div class="stats-grid" id="dashboard-kpis">
+          <div class="card stat-card">
+            <div class="stat-label">Empleados activos</div>
+            <div class="stat-value stat-active" id="dsh-activos">0</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Empleados inactivos</div>
+            <div class="stat-value stat-inactive" id="dsh-inactivos">0</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Total de registros</div>
+            <div class="stat-value" id="dsh-total">0</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Con cédula escaneada</div>
+            <div class="stat-value stat-ok" id="dsh-cedula">0</div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="dash-grid">
+          <div class="card dash-card" id="dash-dept-card">
+            <h3 class="card-title">Empleados por departamento</h3>
+            <div id="dash-dept-chart" class="bar-chart"></div>
+          </div>
+          <div class="card dash-card">
+            <h3 class="card-title">Estado de los registros</h3>
+            <div id="dash-status-chart" class="bar-chart"></div>
+          </div>
+          <div class="card dash-card">
+            <h3 class="card-title">Altas recientes (últimos 6 meses)</h3>
+            <div id="dash-montly-chart" class="bar-chart"></div>
+          </div>
+        </div>
+
+        <!-- Recent records -->
+        <div class="card table-card">
+          <div class="recent-head">
+            <strong>Registros recientes</strong>
+            <span class="muted" id="dash-recent-note"></span>
+          </div>
+          <table class="table" id="dashboard-recent-table">
+            <thead>
+              <tr>
+                <th>Cédula</th>
+                <th>Nombre completo</th>
+                <th>Departamento</th>
+                <th>Puesto</th>
+                <th>Fecha de alta</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-recent-tbody"></tbody>
+          </table>
+          <div id="dashboard-empty" class="empty-state hidden">
+            <p>No hay registros todavía. Cree el primero cargando una cédula en PDF.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Empleados -->
       <section id="view-empleados" class="view">
         <header class="view-header">
@@ -968,13 +1042,6 @@
               <small>Usar únicamente los datos guardados en esta PC.</small>
             </div>
           </label>
-          <label class="mode-card" data-mode="client">
-            <input type="radio" name="conn-mode" value="client" />
-            <div>
-              <strong>🌐 Conectar al servidor</strong>
-              <small>Usar la base central de la empresa por la red.</small>
-            </div>
-          </label>
           <label class="mode-card" data-mode="cloud">
             <input type="radio" name="conn-mode" value="cloud" />
             <div>
@@ -982,29 +1049,10 @@
               <small>Usar el servidor de Internet (base de datos y OCR de cédulas).</small>
             </div>
           </label>
-          <label class="mode-card" data-mode="server">
-            <input type="radio" name="conn-mode" value="server" />
-            <div>
-              <strong>🖥️ Este equipo es el servidor</strong>
-              <small>Compartir la base central con los demás por la red.</small>
-            </div>
-          </label>
         </div>
 
-        <div id="conn-client" class="form-stack hidden">
-          <label for="server-name">Nombre del servidor</label>
-          <div class="row">
-            <input id="server-name" type="text" placeholder="kardex" spellcheck="false" />
-            <button type="button" class="btn btn-ghost" id="btn-connect-name">🔎 Buscar por nombre</button>
-          </div>
-          <p class="muted" style="margin:-6px 0 10px">Escribe el nombre que muestra el panel del servidor (ej. <b>kardex</b>). La dirección se rellena sola.</p>
-          <label for="server-url">Dirección del servidor (o búscala aquí abajo)</label>
-          <input id="server-url" type="text" placeholder="http://192.168.1.50:18006" spellcheck="false" />
-          <button type="button" class="btn btn-ghost" id="btn-discover">🔍 Buscar servidores en la red</button>
-          <div id="discover-results" class="discover-results"></div>
-          <label for="server-token">Token (si el servidor lo requiere)</label>
-          <input id="server-token" type="text" placeholder="Pégalo desde el panel del servidor" spellcheck="false" />
-          <div id="server-test-result" class="error-box hidden"></div>
+        <div id="conn-local" class="form-stack hidden">
+          <p class="muted" style="margin:2px 0 6px">Esta PC usa la <b>base de datos local</b> de este equipo (archivo <b>kardex.db</b>). Los datos no se comparten por red ni por Internet.</p>
         </div>
 
         <div id="conn-cloud" class="form-stack hidden">
@@ -1025,35 +1073,8 @@
           <div id="cloud-login-result" class="error-box hidden"></div>
           <p class="muted" style="margin-top:8px">Al conectar, KARDEX guarda las credenciales, se conecta a la nube y reinicia la app.</p>
         </div>
-
-        <div id="conn-server" class="form-stack hidden">
-          <p class="muted" style="margin:2px 0 6px">Este equipo será el <b>servidor central</b>. Las demás PCs se conectarán escribiendo su nombre.</p>
-          <label for="server-name-gen">Nombre del servidor</label>
-          <input id="server-name-gen" type="text" placeholder="kardex" spellcheck="false" />
-          <p class="muted" style="margin:-6px 0 6px">Ej.: <b>kardex</b> · los clientes lo escriben en "Conectar al servidor".</p>
-
-          <button type="button" class="btn btn-ghost btn-toggle" id="server-advanced-toggle">⚙️ Opciones avanzadas (puerto, token)<span id="server-advanced-caret">▾</span></button>
-          <div id="server-advanced" class="form-stack hidden">
-            <label for="server-port">Puerto</label>
-            <input id="server-port" type="number" min="1" max="65535" placeholder="18006" />
-            <label for="server-token-gen">Token de acceso</label>
-            <div class="row">
-              <input id="server-token-gen" type="text" placeholder="Genera un token para proteger la base" spellcheck="false" />
-              <button type="button" class="btn btn-ghost" id="btn-gen-token" title="Generar token automáticamente">🔄 Generar</button>
-            </div>
-          </div>
-
-          <p class="muted" style="margin:12px 0 2px">Este equipo será visible en la red como:</p>
-          <div id="server-lan-ips" class="lan-ips"></div>
-
-          <button type="button" class="btn btn-ghost" id="btn-firewall-fix">🛡️ Permitir en el Firewall automáticamente</button>
-          <div id="firewall-fix-result" class="error-box hidden"></div>
-          <p class="muted warn">⚠️ Si esta PC usa un antivirus externo (Norton, Avast, McAfee…), también debe permitir KARDEX Digital en su firewall.</p>
-        </div>
       </div>
       <footer class="modal-footer">
-        <button class="btn btn-ghost hidden" id="btn-server-test">Probar conexión</button>
-        <span class="spacer"></span>
         <button class="btn btn-ghost" id="btn-server-cancel">Cancelar</button>
         <button class="btn btn-primary" id="btn-server-save">Aplicar y reiniciar</button>
       </footer>
@@ -1069,20 +1090,6 @@
       <div class="modal-body">
         <p class="muted">¿Qué es esta PC? Elige cómo se usarán los datos y KARDEX se configurará solo.</p>
         <div class="mode-cards" id="wizard-mode-cards">
-          <label class="mode-card" data-mode="server">
-            <input type="radio" name="wizard-mode" value="server" />
-            <div>
-              <strong>🖥️ Es el servidor</strong>
-              <small>La base central de la empresa está aquí y la comparto con las demás PCs.</small>
-            </div>
-          </label>
-          <label class="mode-card" data-mode="client">
-            <input type="radio" name="wizard-mode" value="client" />
-            <div>
-              <strong>🌐 Es un cliente</strong>
-              <small>Conectarme a la base central de la empresa por la red.</small>
-            </div>
-          </label>
           <label class="mode-card" data-mode="cloud">
             <input type="radio" name="wizard-mode" value="cloud" />
             <div>

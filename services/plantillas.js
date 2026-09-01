@@ -7,7 +7,7 @@ const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
 
 const documentos = require('./documentos');
-const db = require('./db');
+const db = require('./active-db');
 const pdf = require('./pdf');
 const DEFAULT_TEMPLATES = require('./default-templates');
 

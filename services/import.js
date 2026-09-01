@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const db = require('./db');
+const db = require('./active-db');
 
 const COLUMNS = [
   { key: 'cedula', labels: ['cedula', 'cédula', 'no cedula', 'no de cedula', 'no cédula', 'no de cédula', 'identidad', 'documento'], def: '' },

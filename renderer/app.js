@@ -122,11 +122,11 @@
     $('btn-import-excel-header').classList.toggle('hidden', !canEdit());
     $('btn-historial-finiquitos').classList.toggle('hidden', !canEdit());
     $('btn-inactivos-excel').classList.toggle('hidden', !canEdit());
-    go('empleados');
+    go('dashboard');
     loadNotificaciones();
   }
 
-  /* ============ Conexión al servidor ============ */
+  /* ============ Conexión (local o nube) ============ */
   async function loadConnStatus() {
     const el = $('conn-status');
     try {
@@ -150,37 +150,16 @@
         }
         return;
       }
-      if (!cfg.url) {
-        el.textContent = 'Base de datos local de esta PC';
-        el.className = 'conn-status';
-        return;
-      }
-      el.textContent = 'Verificando servidor: ' + cfg.url + '…';
+      el.textContent = 'Base de datos local de esta PC';
       el.className = 'conn-status';
-      const t = await window.api.testServer(cfg.url, cfg.token);
-      if (t && t.ok) {
-        el.textContent = 'Servidor conectado: ' + cfg.url;
-        el.className = 'conn-status ok';
-      } else {
-        throw new Error(t && t.error ? t.error : 'sin respuesta');
-      }
     } catch (e) {
-      el.textContent = 'Servidor no alcanzable: ' + (e && e.message ? e.message : 'error');
+      el.textContent = 'No se pudo verificar la conexión: ' + (e && e.message ? e.message : 'error');
       el.className = 'conn-status err';
     }
   }
 
   let connMode = 'local';
   let connCfg = null;
-
-  function randomToken(len = 24) {
-    const bytes = new Uint8Array(len);
-    crypto.getRandomValues(bytes);
-    let s = '';
-    const alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    for (const b of bytes) s += alpha[b % alpha.length];
-    return s;
-  }
 
   function setConnMode(mode) {
     connMode = mode;
@@ -189,47 +168,11 @@
       card.classList.toggle('selected', selected);
       card.querySelector('input').checked = selected;
     });
-    $('conn-client').classList.toggle('hidden', mode !== 'client');
-    $('conn-server').classList.toggle('hidden', mode !== 'server');
+    $('conn-local').classList.toggle('hidden', mode !== 'local');
     $('conn-cloud').classList.toggle('hidden', mode !== 'cloud');
-    $('btn-server-test').classList.toggle('hidden', mode !== 'client');
-    const box = $('server-test-result');
-    box.className = 'error-box hidden';
-    box.textContent = '';
-    $('discover-results').innerHTML = '';
-    if (mode === 'server' && !$('server-token-gen').value.trim()) {
-      $('server-token-gen').value = randomToken();
-    }
     if (mode === 'cloud') {
       const saved = connCfg && connCfg.cloud && connCfg.cloud.token;
       $('cloud-saved-note').textContent = saved ? '✓ Acceso guardado para esta dirección. Puedes reconectar.' : '';
-    }
-  }
-
-  function setAdvanced(open) {
-    $('server-advanced').classList.toggle('hidden', !open);
-    $('server-advanced-caret').textContent = open ? '▴' : '▾';
-  }
-
-  async function firewallFixFromModal() {
-    const box = $('firewall-fix-result');
-    const btn = $('btn-firewall-fix');
-    box.className = 'error-box';
-    box.classList.remove('hidden');
-    box.textContent = 'Solicitando permiso de administrador… Acepta la ventana de Windows.';
-    btn.disabled = true;
-    try {
-      const res = await window.api.serverFirewallFix({ tcpPort: Number($('server-port').value) || 18006, udpPort: 18007 });
-      if (res && res.ok) {
-        box.textContent = '✓ Firewall configurado. Tu servidor será visible para las demás PCs.';
-        box.className = 'error-box success';
-      } else {
-        box.textContent = (res && res.error) || 'No se pudo configurar el Firewall.';
-      }
-    } catch (e) {
-      box.textContent = (e && e.message) || 'No se pudo configurar el Firewall.';
-    } finally {
-      btn.disabled = false;
     }
   }
 
@@ -239,122 +182,16 @@
       if (res && res.ok) {
         connCfg = res.data;
         const c = res.data;
-        $('server-url').value = c.url || '';
-        $('server-token').value = c.token || '';
-        $('server-port').value = c.serverPort || 18006;
-        $('server-name-gen').value = c.serverName || 'kardex';
-        $('lan-port-hint').textContent = c.serverPort || 18006;
-        $('server-token-gen').value = c.token || '';
         $('cloud-url').value = (c.cloud && c.cloud.url) || '';
-        const mode = (c.mode && ['local', 'client', 'server', 'cloud'].includes(c.mode)) ? c.mode : 'local';
+        const mode = (c.mode && ['local', 'cloud'].includes(c.mode)) ? c.mode : 'local';
         setConnMode(mode);
-        $('server-lan-ips').innerHTML = (c.lanIps && c.lanIps.length
-          ? c.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (c.serverPort || 18006) + '</span>').join('')
-          : '<span>No se detectaron IPs de red en esta PC</span>');
       }
     } catch (e) { /* noop */ }
-    setAdvanced(false);
-    $('firewall-fix-result').className = 'error-box hidden';
     $('server-modal').classList.remove('hidden');
-    if (connMode === 'client') $('server-url').focus();
   }
 
   function closeServerConfig() {
     $('server-modal').classList.add('hidden');
-  }
-
-  async function discoverServers() {
-    const box = $('discover-results');
-    box.innerHTML = '<div class="muted">Buscando servidores en la red…</div>';
-    try {
-      const res = await window.api.discoverServers();
-      const list = (res && res.ok && res.data && Array.isArray(res.data.list)) ? res.data.list : [];
-      if (!list.length) {
-        box.innerHTML = '<div class="muted">No se encontró ningún servidor. Verifica que el servidor esté activo y que el Firewall permita el puerto UDP 18007.</div>';
-        return;
-      }
-      box.innerHTML = list.map((s) =>
-        '<div class="discover-item">' +
-          '<span class="d-name">' + esc(s.name) + '</span>' +
-          '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-          (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge no-token">sin token</span>') +
-          '<button class="btn btn-ghost d-use" data-url="http://' + esc(s.host) + ':' + esc(s.port) + '" data-token="' + (s.tokenRequired ? 'true' : '') + '">Usar</button>' +
-        '</div>'
-      ).join('');
-      box.querySelectorAll('.d-use').forEach((btn) => btn.addEventListener('click', () => {
-        $('server-url').value = btn.dataset.url;
-        $('discover-results').innerHTML = '';
-        if (btn.dataset.token === 'true') $('server-token').focus();
-      }));
-    } catch (e) {
-      box.innerHTML = '<div class="muted">Error buscando servidores: ' + esc(e && e.message ? e.message : 'error') + '</div>';
-    }
-  }
-
-  async function connectByName() {
-    const term = $('server-name').value.trim();
-    if (!term) { toast('Escribe el nombre del servidor (ej. kardex)', 'error'); $('server-name').focus(); return; }
-    const box = $('discover-results');
-    box.innerHTML = '<div class="muted">Buscando "' + esc(term) + '" en la red…</div>';
-    try {
-      const res = await window.api.discoverServers();
-      const list = (res && res.ok && res.data && Array.isArray(res.data.list)) ? res.data.list : [];
-      const t = term.toLowerCase();
-      const hits = list.filter((s) => (s.name || '').toLowerCase().includes(t) || (s.host || '').toLowerCase().includes(t));
-      if (!hits.length) {
-        box.innerHTML = '<div class="muted">No se encontró ningún servidor llamado "' + esc(term) +
-          '". Verifica el nombre en el panel del servidor y que el Firewall permita el puerto UDP 18007.</div>';
-        return;
-      }
-      if (hits.length === 1) {
-        const s = hits[0];
-        $('server-url').value = 'http://' + s.host + ':' + s.port;
-        box.innerHTML =
-          '<div class="discover-item">' +
-            '<span class="d-name">' + esc(s.name) + '</span>' +
-            '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-            (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge">sin token</span>') +
-          '</div>' +
-          '<div class="muted" style="margin-top:6px">✓ Servidor encontrado. ' +
-          (s.tokenRequired ? 'Escribe el token y pulsa <b>Probar conexión</b>.' : 'Pulsa <b>Aplicar y reiniciar</b> para conectar.') + '</div>';
-        if (s.tokenRequired) $('server-token').focus();
-        return;
-      }
-      box.innerHTML = hits.map((s) =>
-        '<div class="discover-item">' +
-          '<span class="d-name">' + esc(s.name) + '</span>' +
-          '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-          (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge">sin token</span>') +
-          '<button class="btn btn-ghost d-use" data-url="http://' + esc(s.host) + ':' + esc(s.port) + '" data-token="' + (s.tokenRequired ? 'true' : '') + '">Usar</button>' +
-        '</div>'
-      ).join('');
-      box.querySelectorAll('.d-use').forEach((btn) => btn.addEventListener('click', () => {
-        $('server-url').value = btn.dataset.url;
-        $('discover-results').innerHTML = '';
-        if (btn.dataset.token === 'true') $('server-token').focus();
-      }));
-    } catch (e) {
-      box.innerHTML = '<div class="muted">Error buscando el servidor: ' + esc(e && e.message ? e.message : 'error') + '</div>';
-    }
-  }
-
-  async function testServerConnection() {
-    const box = $('server-test-result');
-    box.className = 'error-box';
-    box.classList.remove('hidden');
-    box.textContent = 'Probando…';
-    try {
-      const res = await window.api.testServer($('server-url').value, $('server-token').value);
-      if (res && res.ok) {
-        box.textContent = 'Conexión exitosa. El servidor está disponible.';
-        box.className = 'error-box success';
-      } else {
-        throw new Error(res && res.error ? res.error : 'sin respuesta');
-      }
-    } catch (e) {
-      box.textContent = (e && e.message) || 'No se pudo conectar';
-      box.className = 'error-box';
-    }
   }
 
   async function testCloudConnection() {
@@ -420,35 +257,15 @@
         setTimeout(() => window.api.restartApp(), 1200);
         return;
       }
-      if (mode === 'client') {
-        const url = $('server-url').value.trim().replace(/\/+$/, '');
-        if (!url) throw new Error('Escribe la dirección del servidor (ej. http://192.168.1.50:18006)');
-        if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
-        const token = $('server-token').value.trim();
-        const res = await window.api.setServerConfig({ mode: 'client', url, token });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Conectando al servidor. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
-      } else if (mode === 'server') {
-        const port = Number($('server-port').value);
-        if (!port || port < 1 || port > 65535) throw new Error('Elige un puerto válido entre 1 y 65535');
-        const token = $('server-token-gen').value.trim();
-        const name = $('server-name-gen').value.trim();
-        const res = await window.api.setServerConfig({ mode: 'server', port, token, name });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Iniciando el servidor en este equipo. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
-      } else {
-        if (connCfg && connCfg.mode === 'local' && !connCfg.url) {
-          closeServerConfig();
-          toast('Configuración actual: base de datos local', 'info', 1200);
-          return;
-        }
-        const res = await window.api.setServerConfig({ mode: 'local' });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Volviendo a base de datos local. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
+      if (connCfg && connCfg.mode === 'local' && !(connCfg.cloud && connCfg.cloud.enabled)) {
+        closeServerConfig();
+        toast('Configuración actual: base de datos local', 'info', 1200);
+        return;
       }
+      const res = await window.api.setServerConfig({ mode: 'local' });
+      if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
+      toast('Volviendo a base de datos local. Reiniciando…', 'info', 1500);
+      setTimeout(() => window.api.restartApp(), 1200);
     } catch (e) {
       toast((e && e.message) || 'Error guardando la configuración', 'error');
     }
@@ -481,39 +298,17 @@
     try { await window.api.wizardDone(); } catch (e) { /* noop */ }
     $('wizard-modal').classList.add('hidden');
     if (wizardMode === 'local') return;
-    if (wizardMode === 'server') {
-      // Un clic: se crea el servidor con valores recomendados (nombre, puerto y token automático).
-      const port = 18006;
-      const token = randomToken();
-      try {
-        const res = await window.api.setServerConfig({ mode: 'server', port, token, name: 'kardex' });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Acepta la ventana de Windows para configurar el Firewall…', 'info', 2500);
-        try { await window.api.serverFirewallFix({ tcpPort: port, udpPort: 18007 }); } catch (e) { /* no importa si se cancela */ }
-        toast('Creando el servidor… Reiniciando.', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1800);
-      } catch (e) {
-        toast((e && e.message) || 'Error creando el servidor', 'error');
-      }
-      return;
-    }
+    // Modo nube: se abre la ventana de conexión para introducir URL + credenciales.
     try {
       const res = await window.api.getServerConfig();
       if (res && res.ok) {
         connCfg = res.data;
-        $('server-port').value = res.data.serverPort || 18006;
-        $('server-name-gen').value = res.data.serverName || 'kardex';
-        $('lan-port-hint').textContent = res.data.serverPort || 18006;
         $('cloud-url').value = (res.data.cloud && res.data.cloud.url) || '';
-        $('server-lan-ips').innerHTML = (res.data.lanIps && res.data.lanIps.length
-          ? res.data.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (res.data.serverPort || 18006) + '</span>').join('')
-          : '<span>No se detectaron IPs de red en esta PC</span>');
       }
     } catch (e) { /* noop */ }
-    setConnMode(wizardMode);
+    setConnMode('cloud');
     $('server-modal').classList.remove('hidden');
-    if (wizardMode === 'client') $('server-url').focus();
-    if (wizardMode === 'cloud') $('cloud-url').focus();
+    $('cloud-url').focus();
   }
 
   /* ============ Licencia ============ */
@@ -625,12 +420,13 @@
   }
 
   /* ============ Views ============ */
-  const views = { empleados: null, inactivos: null, nomina: null, reportes: null, notificaciones: null, correo: null, usuarios: null, audit: null, sistema: null };
+  const views = { dashboard: null, empleados: null, inactivos: null, nomina: null, reportes: null, notificaciones: null, correo: null, usuarios: null, audit: null, sistema: null };
   function go(name) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
-    ['empleados', 'inactivos', 'nomina', 'reportes', 'notificaciones', 'correo', 'usuarios', 'audit', 'sistema'].forEach(v => {
+    ['dashboard', 'empleados', 'inactivos', 'nomina', 'reportes', 'notificaciones', 'correo', 'usuarios', 'audit', 'sistema'].forEach(v => {
       $('view-' + v).classList.toggle('hidden', v !== name);
     });
+    if (name === 'dashboard') loadDashboard();
     if (name === 'empleados') loadEmployees();
     if (name === 'inactivos') loadInactiveEmployees();
     if (name === 'nomina') loadNomina();
@@ -640,6 +436,113 @@
     if (name === 'usuarios') loadUsers();
     if (name === 'audit') loadAudit();
     if (name === 'sistema') loadSistema();
+  }
+
+  /* ============ Inicio / Dashboard ============ */
+  function escLabel(v) { return esc(String(v == null ? '' : v)); }
+
+  function renderBarChart(el, items, opts) {
+    // items: [{label, value, color?}]. Genera un gráfico de barras verticales en CSS puro.
+    const o = opts || {};
+    const max = Math.max(1, ...items.map(i => i.value));
+    const format = o.format || ((v) => v);
+    el.innerHTML = items.map(it => `
+      <div class="bar-col" title="${esc(it.label)}: ${it.value}">
+        <div class="bar-value">${format(it.value)}</div>
+        <div class="bar-track"><div class="bar-fill" style="height:${Math.max(3, Math.round((it.value / max) * 100))}%;${it.color ? 'background:' + it.color : ''}"></div></div>
+        <div class="bar-label" title="${esc(it.label)}">${escLabel(it.label)}</div>
+      </div>`).join('');
+  }
+
+  function monthLabel(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return d.toLocaleDateString('es', { month: 'short' }).replace('.', '') + ' ' + d.getFullYear().toString().slice(-2);
+  }
+
+  function monthKey(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function fmtDshDate(v) {
+    if (!v) return '—';
+    const s = String(v);
+    const n = /^\d{4}-\d{2}-\d{2}/.test(s) ? new Date(s.slice(0, 10) + 'T00:00:00') : new Date(s);
+    if (isNaN(n.getTime())) return '—';
+    return n.toLocaleDateString('es-DO');
+  }
+
+  async function loadDashboard() {
+    try {
+      const [listRes, statsRes] = await Promise.all([window.api.listEmployees('', ''), window.api.getStats()]);
+      if (!listRes.ok) throw new Error(listRes.error);
+      const rows = (listRes.data || []).slice();
+
+      const activosCount = rows.filter(r => r.status === 'activo').length;
+      const inactivosCount = rows.filter(r => r.status === 'inactivo').length;
+      const total = rows.length;
+      const conCedula = rows.filter(r => r.has_images).length;
+
+      $('dsh-activos').textContent = activosCount;
+      $('dsh-inactivos').textContent = inactivosCount;
+      $('dsh-total').textContent = total;
+      $('dsh-cedula').textContent = conCedula;
+      $('dashboard-subtitle').textContent = 'Resumen general · ' + new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      // Gráfico por departamento (de empleados activos)
+      const deptMap = {};
+      rows.forEach(r => { if (r.status === 'activo') { const k = (r.departamento || 'Sin departamento'); deptMap[k] = (deptMap[k] || 0) + 1; } });
+      const deptItems = Object.keys(deptMap).map(k => ({ label: k, value: deptMap[k], color: '#3b82f6' })).sort((a, b) => b.value - a.value).slice(0, 8);
+      if (!deptItems.length) $('dash-dept-card').classList.add('hidden');
+      else { $('dash-dept-card').classList.remove('hidden'); renderBarChart($('dash-dept-chart'), deptItems); }
+
+      // Gráfico de estado
+      renderBarChart($('dash-status-chart'), [
+        { label: 'Activos', value: activosCount, color: '#10b981' },
+        { label: 'Inactivos', value: inactivosCount, color: '#f59e0b' }
+      ]);
+
+      // Gráfico de altas por mes (últimos 6 meses)
+      const monthly = [];
+      for (let i = 5; i >= 0; i--) {
+        const k = monthKey(i);
+        monthly.push({ key: k, label: monthLabel(i), count: 0 });
+      }
+      rows.forEach(r => {
+        const c = (r.created_at || '').slice(0, 10);
+        if (!c) return;
+        const mk = c.slice(0, 7);
+        const m = monthly.find(x => x.key === mk);
+        if (m) m.count++;
+      });
+      renderBarChart($('dash-montly-chart'), monthly.map(m => ({ label: m.label, value: m.count, color: '#8b5cf6' })));
+
+      // Registros recientes
+      const recent = rows.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 8);
+      $('dash-recent-note').textContent = 'Los más recientes primero (últimos ' + recent.length + ' de ' + total + ')';
+      $('dashboard-empty').classList.toggle('hidden', recent.length > 0);
+      $('dashboard-recent-tbody').innerHTML = recent.map(r => `
+        <tr>
+          <td><strong>${esc(r.cedula || '—')}</strong></td>
+          <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
+          <td>${esc(r.departamento || '—')}</td>
+          <td>${esc(r.puesto || '—')}</td>
+          <td>${esc(fmtDshDate(r.created_at))}</td>
+          <td class="row-actions">
+            <button class="btn btn-ghost btn-sm" data-open-emp="${r.id}" title="Abrir expediente">Abrir</button>
+          </td>
+        </tr>`).join('');
+
+      $('dashboard-recent-tbody').querySelectorAll('[data-open-emp]').forEach(btn => {
+        btn.addEventListener('click', () => openEmployee(btn.getAttribute('data-open-emp')));
+      });
+    } catch (e) {
+      toast('Error cargando el panel: ' + ((e && e.message) || 'error'), 'error');
+    }
   }
 
   /* ============ Empleados ============ */
@@ -2984,17 +2887,11 @@
     $('server-modal-close').addEventListener('click', closeServerConfig);
     $('btn-server-cancel').addEventListener('click', closeServerConfig);
     $('server-modal').addEventListener('click', (e) => { if (e.target === $('server-modal')) closeServerConfig(); });
-    $('btn-server-test').addEventListener('click', testServerConnection);
     $('btn-cloud-test').addEventListener('click', testCloudConnection);
     $('btn-cloud-login').addEventListener('click', connectCloud);
     ['cloud-url', 'cloud-user', 'cloud-pass'].forEach((id) =>
       $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') connectCloud(); }));
     $('btn-server-save').addEventListener('click', saveServerConfig);
-    $('btn-discover').addEventListener('click', discoverServers);
-    $('btn-connect-name').addEventListener('click', connectByName);
-    $('btn-gen-token').addEventListener('click', () => { $('server-token-gen').value = randomToken(); });
-    $('server-advanced-toggle').addEventListener('click', () => setAdvanced($('server-advanced').classList.contains('hidden')));
-    $('btn-firewall-fix').addEventListener('click', firewallFixFromModal);
     document.querySelectorAll('#conn-mode-cards .mode-card').forEach((card) =>
       card.addEventListener('click', () => setConnMode(card.dataset.mode)));
     document.querySelectorAll('#wizard-mode-cards .mode-card').forEach((card) =>
@@ -3037,6 +2934,8 @@
 
     document.querySelectorAll('.nav-item').forEach(n =>
       n.addEventListener('click', () => go(n.dataset.view)));
+
+    $('btn-open-empleados').addEventListener('click', () => go('empleados'));
 
     let searchTimer = null;
     $('search-input').addEventListener('input', () => {
