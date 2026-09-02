@@ -437,6 +437,9 @@ th.num { text-align: right; }
 .report-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px 6px; }
 .report-head h3 { margin: 0; }
 
+.quincena-title { margin: 16px 20px 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+#nomina-quincenas .quincena-title:first-child { margin-top: 8px; border-top: none; }
+
 .extra-card { padding: 14px 18px; margin-bottom: 18px; }
 .extra-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 

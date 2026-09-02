@@ -191,7 +191,7 @@ function calcNomina(employees, mes, anio, extras = {}, incentivos = {}, pagosVac
 // `deduccionesManuales` es un mapa { employee_id: [{ monto, quincena }] } donde quincena: 0=todas, 1=primera, 2=segunda.
 function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {}, pagosVacaciones = {}, deduccionesManuales = {}) {
   const rows = [];
-  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, deducciones_manuales: 0, quincena2_neto: 0, neto: 0 };
+  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, deducciones_manuales: 0, salario_mitad_total: 0, dm_q1_total: 0, dm_q2_total: 0, quincena2_neto: 0, neto: 0 };
   for (const emp of employees || []) {
     const m = calcEmpleadoMes(emp, extras, incentivos, pagosVacaciones);
     if (!m) continue;
@@ -229,6 +229,9 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
       isr: m.isr,
       retenciones: ret,
       deducciones_manuales: totalDm,
+      salario_mitad: mitad,
+      dm_q1: dmQ1,
+      dm_q2: dmQ2,
       quincena1: q1,
       quincena2_bruto: q2Bruto,
       quincena2_neto: q2Neto,
@@ -247,6 +250,9 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
     totales.isr += m.isr;
     totales.retenciones += ret;
     totales.deducciones_manuales += totalDm;
+    totales.salario_mitad_total += mitad;
+    totales.dm_q1_total += dmQ1;
+    totales.dm_q2_total += dmQ2;
     totales.quincena2_neto += q2Neto;
     totales.neto += totalNeto;
   }

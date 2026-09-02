@@ -393,11 +393,27 @@
         </div>
         <div class="stats-grid" id="nomina-totals"></div>
         <div class="card table-card" id="nomina-table-card">
-          <table class="table" id="nomina-table">
-            <thead id="nomina-thead"></thead>
-            <tbody id="nomina-tbody"></tbody>
-            <tfoot id="nomina-tfoot"></tfoot>
-          </table>
+          <div id="nomina-table">
+            <table class="table" id="nomina-table-single">
+              <thead id="nomina-thead"></thead>
+              <tbody id="nomina-tbody"></tbody>
+              <tfoot id="nomina-tfoot"></tfoot>
+            </table>
+          </div>
+          <div id="nomina-quincenas" class="hidden">
+            <h3 class="quincena-title">Primera quincena</h3>
+            <table class="table">
+              <thead id="nomina-q1-thead"></thead>
+              <tbody id="nomina-q1-tbody"></tbody>
+              <tfoot id="nomina-q1-tfoot"></tfoot>
+            </table>
+            <h3 class="quincena-title">Segunda quincena</h3>
+            <table class="table">
+              <thead id="nomina-q2-thead"></thead>
+              <tbody id="nomina-q2-tbody"></tbody>
+              <tfoot id="nomina-q2-tfoot"></tfoot>
+            </table>
+          </div>
           <div id="nomina-empty" class="empty-state hidden">
             <p>Sin resultados. Verifique que haya empleados activos con salario cargado.</p>
           </div>

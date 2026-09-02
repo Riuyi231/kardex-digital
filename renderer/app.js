@@ -1201,6 +1201,42 @@
         ['Total retenciones', fmtRD(t.retenciones), ''],
         ['2da quincena (neto)', fmtRD(t.quincena2_neto), ''],
         ['Total neto', fmtRD(t.neto), ' stat-net']
+      ],
+      tables: [
+        {
+          id: 'q1',
+          title: 'Primera quincena',
+          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Deducciones', 'Neto a pagar'],
+          cols: (r) => [
+            C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
+            C('money', r.salario_mitad), C('money', r.dm_q1), C('money', r.quincena1, true)
+          ],
+          totCols: (t) => [
+            C('texto', ''), C('texto', ''), C('texto', 'Totales'),
+            C('money', t.salario_mitad_total), C('money', t.dm_q1_total), C('money', t.quincena1, true)
+          ]
+        },
+        {
+          id: 'q2',
+          title: 'Segunda quincena',
+          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
+          cols: (r) => [
+            C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
+            C('money', r.salario_mitad), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+            C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
+            C('money', r.dm_q2),
+            C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
+            C('money', r.quincena2_neto, true)
+          ],
+          totCols: (t) => [
+            C('texto', ''), C('texto', ''), C('texto', 'Totales'),
+            C('money', t.salario_mitad_total), C('texto', ''), C('texto', ''), C('texto', ''),
+            C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
+            C('money', t.dm_q2_total),
+            C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
+            C('money', t.quincena2_neto, true)
+          ]
+        }
       ]
     },
     semanal: {
@@ -1284,24 +1320,58 @@
       const data = res.data;
       lastNominaData = { vista, data };
       $('nomina-empty').classList.toggle('hidden', data.rows.length > 0);
-      $('nomina-thead').innerHTML = `<tr>${def.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
-      const tb = $('nomina-tbody');
-      tb.innerHTML = data.rows.length ? data.rows.map(r =>
-        `<tr>${def.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
-      tb.querySelectorAll('[data-he]').forEach(b => b.addEventListener('click', () => {
-        $('nomina-emp').value = b.dataset.he;
-        loadNomina();
-      }));
+      if (def.tables && def.tables.length) {
+        renderNominaTables(def.tables, data, empId);
+      } else {
+        renderNominaSingleTable(def, data, empId);
+      }
       const t = data.totales;
-      $('nomina-tfoot').innerHTML = data.rows.length
-        ? `<tr>${def.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
-        : '';
       const cards = def.cards(t, data.rows.length);
       $('nomina-totals').innerHTML = cards.map(([l, v, cls]) =>
         `<div class="card stat-card"><div class="stat-label">${esc(l)}</div><div class="stat-value${cls}">${esc(v)}</div></div>`).join('');
     } catch (e) {
       toast(e.message, 'error');
     }
+  }
+
+  function renderNominaSingleTable(def, data, empId) {
+    $('nomina-table').classList.remove('hidden');
+    $('nomina-quincenas').classList.add('hidden');
+    $('nomina-thead').innerHTML = `<tr>${def.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
+    const tb = $('nomina-tbody');
+    tb.innerHTML = data.rows.length ? data.rows.map(r =>
+      `<tr>${def.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
+    bindNominaExtras(tb, data);
+    const t = data.totales;
+    $('nomina-tfoot').innerHTML = data.rows.length
+      ? `<tr>${def.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
+      : '';
+  }
+
+  function renderNominaTables(tables, data, empId) {
+    $('nomina-table').classList.add('hidden');
+    $('nomina-quincenas').classList.remove('hidden');
+    const t = data.totales;
+    for (const table of tables) {
+      const tbody = $(`nomina-${table.id}-tbody`);
+      const thead = $(`nomina-${table.id}-thead`);
+      const tfoot = $(`nomina-${table.id}-tfoot`);
+      if (!tbody) continue;
+      thead.innerHTML = `<tr>${table.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
+      tbody.innerHTML = data.rows.length ? data.rows.map(r =>
+        `<tr>${table.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
+      bindNominaExtras(tbody, data);
+      tfoot.innerHTML = data.rows.length
+        ? `<tr>${table.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
+        : '';
+    }
+  }
+
+  function bindNominaExtras(tbody, data) {
+    tbody.querySelectorAll('[data-he]').forEach(b => b.addEventListener('click', () => {
+      $('nomina-emp').value = b.dataset.he;
+      loadNomina();
+    }));
   }
 
   async function saveHorasExtra() {
