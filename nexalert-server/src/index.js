@@ -211,7 +211,7 @@ app.post('/api/reportes/:id/estado', a.requireAuth('tecnico'), (req, res) => {
   try {
     const solucion = String(req.body.solucion || '').trim();
     const enviarGrupo = req.body.enviar_grupo != null ? (req.body.enviar_grupo ? 1 : 0) : null;
-    const out = d.setEstado(rp.id, estado, req.user.nombre, { solucion: solucion || null, enviar_grupo });
+    const out = d.setEstado(rp.id, estado, req.user.nombre, { solucion: solucion || null, enviar_grupo: enviarGrupo });
     const nota = String(req.body.nota || '').trim();
     if (nota) {
       d.addNota(rp.id, req.user.nombre, nota);
