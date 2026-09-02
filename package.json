@@ -1,6 +1,6 @@
 {
   "name": "kardex-digital",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Sistema de nomina / kardex para Recursos Humanos. Carga la cedula de identidad dominicana desde PDF, extrae los datos con OCR + codigo de barras, muestra vista previa editable y gestiona usuarios con roles (admin, editor, invitado).",
   "main": "main.js",
   "author": "",

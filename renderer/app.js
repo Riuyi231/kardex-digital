@@ -1723,6 +1723,9 @@
   let lastReport = null;
   let lastReportTitle = '';
   let lastReportKind = '';
+  let repPageRows = [];
+  let repPage = 1;
+  const REP_PAGE_SIZE = 15;
   function initReportes() {
     const sel = $('rep-mes');
     if (sel.options.length === 0) {
@@ -1740,14 +1743,44 @@
     lastReport = { headers, rows };
     lastReportTitle = title;
     lastReportKind = kind || '';
-    const box = $('report-content');
-    box.innerHTML = `
+    repPageRows = rows;
+    repPage = 1;
+    $('report-content').innerHTML = `
       <h3>${esc(title)}</h3>
       <table class="table">
         <thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('')
-          : `<tr><td colspan="${headers.length}" class="muted center">${esc(emptyMsg)}</td></tr>`}</tbody>
-      </table>`;
+        <tbody id="report-tbody"></tbody>
+      </table>
+      <div class="pagination hidden" id="report-pagination">
+        <button class="btn btn-ghost" id="report-prev">← Anterior</button>
+        <span id="report-page-info" class="pagination-info">Página 1 de 1</span>
+        <button class="btn btn-ghost" id="report-next">→ Siguiente</button>
+      </div>`;
+    bindReportPager();
+    renderReportPage(emptyMsg);
+  }
+
+  function renderReportPage(emptyMsg) {
+    const rows = repPageRows;
+    const pages = Math.max(1, Math.ceil(rows.length / REP_PAGE_SIZE));
+    if (repPage > pages) repPage = pages;
+    const start = (repPage - 1) * REP_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + REP_PAGE_SIZE);
+    $('report-tbody').innerHTML = pageRows.length
+      ? pageRows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${lastReport.headers.length}" class="muted center">${esc(emptyMsg)}</td></tr>`;
+    const bar = $('report-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('report-page-info').textContent = `Página ${repPage} de ${pages} · ${rows.length} registro(s)`;
+    $('report-prev').disabled = repPage <= 1;
+    $('report-next').disabled = repPage >= pages;
+  }
+
+  function bindReportPager() {
+    const prev = $('report-prev');
+    const next = $('report-next');
+    if (prev) prev.addEventListener('click', () => { if (repPage > 1) { repPage--; renderReportPage(); } });
+    if (next) next.addEventListener('click', () => { if (repPage < Math.ceil(repPageRows.length / REP_PAGE_SIZE)) { repPage++; renderReportPage(); } });
   }
 
   async function loadReportPlantilla() {
