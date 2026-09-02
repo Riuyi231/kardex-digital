@@ -20,12 +20,8 @@ const { autoUpdater } = require('electron-updater');
 })();
 
 const dbLocal = require('./services/db');
-const dbRpc = require('./services/db-rpc-client');
 const dbCloud = require('./services/db-cloud-client');
-const dbServer = require('./services/db-rpc-server');
 const config = require('./services/config');
-const discovery = require('./services/discovery');
-const firewall = require('./services/firewall');
 const license = require('./services/license');
 const { processFile } = require('./services/cedula');
 const pdf = require('./services/pdf');
@@ -34,7 +30,6 @@ const documentos = require('./services/documentos');
 const plantillas = require('./services/plantillas');
 const excel = require('./services/excel');
 const notificaciones = require('./services/notificaciones');
-const correos = require('./services/mailer');
 const importService = require('./services/import');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -59,50 +54,8 @@ function toBufferArg(x) {
 }
 
 let mainWindow = null;
-let serverPanel = null;
 let currentUser = null;
 let db = null;
-let serverTray = null;
-let isServer = false;
-
-// Envía un archivo al servidor KARDEX para que ejecute el OCR remoto y
-// devuelva los campos de la cédula con el mismo shape que processFile local.
-async function processCedulaRemote(filePath, serverUrl, token) {
-  if (!fs.existsSync(filePath)) throw new Error('El archivo no existe');
-  const data = fs.readFileSync(filePath).toString('base64');
-  const name = path.basename(filePath);
-  const url = String(serverUrl).replace(/\/+$/, '') + '/ocr';
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-kardex-token': token || '',
-        'x-kardex-node': require('./services/machine').machineId()
-      },
-      body: JSON.stringify({ name, data })
-    });
-  } catch (e) {
-    throw new Error('No se pudo contactar el servidor para el OCR remoto: ' + (e.message || e));
-  }
-  // 404 => el servidor no ofrece el endpoint OCR (versión antigua). Señalizamos
-  // para que el llamador pueda degradar a OCR local.
-  if (resp.status === 404) {
-    const err = new Error('OCR remoto no disponible en el servidor');
-    err.code = 'OCR_REMOTE_UNAVAILABLE';
-    throw err;
-  }
-  const payload = await resp.json().catch(() => null);
-  if (!payload) throw new Error('El servidor devolvió una respuesta inválida');
-  if (payload.ok) {
-    return {
-      ...payload.data,
-      fileName: payload.data && payload.data.name ? payload.data.name : name
-    };
-  }
-  throw new Error('OCR remoto falló: ' + (payload.error || 'error desconocido'));
-}
 
 // Envía un archivo al servidor cloud (internet, OAuth Bearer) para que ejecute el
 // OCR y devuelva los campos de la cédula con el mismo shape que processFile local.
@@ -165,17 +118,6 @@ function configPath() {
   return path.join(app.getPath('userData'), 'kardex-config.json');
 }
 
-function lanIps() {
-  const os = require('os');
-  const out = [];
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const ni of list || []) {
-      if (ni.family === 'IPv4' && !ni.internal) out.push(ni.address);
-    }
-  }
-  return out;
-}
-
 function loadAiKeysFromDb() {
   for (const k of ['OPENAI_API_KEY', 'GEMINI_API_KEY']) {
     try {
@@ -188,9 +130,11 @@ function loadAiKeysFromDb() {
 async function openDb() {
   const dir = dataDir();
   const cfg = config.load(configPath());
+  const activeDb = require('./services/active-db');
   if (cfg.cloud && cfg.cloud.enabled && cfg.cloud.url) {
     dbCloud.configure({ url: cfg.cloud.url, token: cfg.cloud.token || '' });
     db = dbCloud;
+    activeDb.setActive(db);
     const ping = await dbCloud.ping();
     if (ping.ok) {
       loadAiKeysFromDb();
@@ -198,193 +142,12 @@ async function openDb() {
     } else {
       console.warn('[KARDEX] Servidor cloud no alcanzable en', cfg.cloud.url + ':', ping.error);
     }
-  } else if (cfg.serverUrl) {
-    dbRpc.configure({ url: cfg.serverUrl, token: cfg.token });
-    db = dbRpc;
-    const ping = await dbRpc.ping();
-    if (ping.ok) {
-      loadAiKeysFromDb();
-      console.log('[KARDEX] Conectado al servidor:', cfg.serverUrl);
-    } else {
-      console.warn('[KARDEX] Servidor no alcanzable en', cfg.serverUrl + ':', ping.error);
-    }
   } else {
     db = dbLocal;
+    activeDb.setActive(db);
     fs.mkdirSync(dir, { recursive: true });
     await dbLocal.open(path.join(dir, 'kardex.db'));
     loadAiKeysFromDb();
-  }
-}
-
-function createServerTray(info, dir, name) {
-  serverTray = new Tray(path.join(__dirname, 'resources', 'icon.ico'));
-  serverTray.setToolTip('KARDEX Digital · Servidor "' + (name || config.DEFAULT_NAME) + '" (puerto ' + info.port + ')');
-  const menu = Menu.buildFromTemplate([
-    { label: 'Servidor activo · puerto ' + info.port, enabled: false },
-    { label: 'Abrir panel', click: () => { openServerPanel(); } },
-    { label: 'Abrir carpeta de datos', click: () => { shell.openPath(dir); } },
-    { type: 'separator' },
-    { label: 'Cambiar a modo local', click: () => {
-      config.save(configPath(), { mode: 'local', url: '' });
-      app.relaunch();
-      app.exit(0);
-    } },
-    { label: 'Detener servidor', click: () => { app.exit(0); } }
-  ]);
-  serverTray.setContextMenu(menu);
-  serverTray.on('double-click', () => { openServerPanel(); });
-}
-
-function createServerPanel() {
-  if (serverPanel && !serverPanel.isDestroyed()) return;
-  serverPanel = new BrowserWindow({
-    width: 660,
-    height: 720,
-    show: false,
-    title: 'KARDEX Digital · Servidor',
-    autoHideMenuBar: true,
-    resizable: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-  serverPanel.loadFile(path.join(__dirname, 'renderer', 'server-panel.html'));
-  serverPanel.on('closed', () => { serverPanel = null; });
-}
-
-function openServerPanel() {
-  createServerPanel();
-  if (serverPanel && !serverPanel.isDestroyed()) {
-    serverPanel.show();
-    serverPanel.focus();
-  }
-}
-
-function registerServerIpc() {
-  registerServerHelperIpc();
-  ipcMain.handle('server:status', wrap(() => ({
-    ...dbServer.getStatus(),
-    name: config.load(configPath()).serverName || config.DEFAULT_NAME,
-    ips: discovery.lanIps()
-  })));
-
-  ipcMain.handle('server:set-name', wrap((e, { name } = {}) => {
-    const clean = String(name || '').trim().replace(/[^A-Za-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
-    if (!clean) throw new Error('Escribe un nombre válido (letras y números)');
-    config.save(configPath(), { name: clean });
-    setTimeout(() => { app.relaunch(); app.exit(0); }, 900);
-    return { name: clean };
-  }));
-
-  ipcMain.handle('server:regenerate-token', wrap(() => {
-    const token = crypto.randomBytes(18).toString('base64url');
-    dbServer.setToken(token);
-    config.save(configPath(), { token });
-    return { ok: true, token };
-  }));
-
-  ipcMain.handle('server:open-data-folder', wrap(() => {
-    shell.openPath(dataDir());
-    return true;
-  }));
-
-  ipcMain.handle('server:to-local', wrap(() => {
-    config.save(configPath(), { mode: 'local', url: '' });
-    app.relaunch();
-    app.exit(0);
-    return true;
-  }));
-
-  ipcMain.handle('server:stop', wrap(() => {
-    app.exit(0);
-    return true;
-  }));
-}
-
-// Utilidades de red/firewall disponibles tanto en modo cliente (antes de
-// reiniciar) como en el panel del servidor.
-function registerServerHelperIpc() {
-  ipcMain.handle('server:firewall-fix', wrap(async (e, { tcpPort, udpPort } = {}) => {
-    return await firewall.addRules({
-      tcpPort: Number(tcpPort) || config.DEFAULT_PORT,
-      udpPort: Number(udpPort) || discovery.DEFAULT_PORT,
-      exePath: process.execPath
-    });
-  }));
-
-  ipcMain.handle('server:firewall-status', wrap(async () => {
-    return await firewall.rulesStatus();
-  }));
-
-  ipcMain.handle('server:av-detect', wrap(async () => {
-    return { list: await firewall.detectAntivirus() };
-  }));
-
-  ipcMain.handle('server:self-ping', wrap(async () => {
-    const cfg = config.load(configPath());
-    const port = cfg.serverPort || config.DEFAULT_PORT;
-    try {
-      const started = Date.now();
-      const resp = await fetch('http://127.0.0.1:' + port + '/ping', {
-        signal: AbortSignal.timeout(4000),
-        headers: cfg.token ? { 'x-kardex-token': cfg.token } : {}
-      });
-      const j = await resp.json();
-      return { reachable: !!(j && j.ok), status: resp.status, latencyMs: Date.now() - started };
-    } catch (e) {
-      return { reachable: false, error: e.message || 'sin respuesta' };
-    }
-  }));
-}
-
-async function startServerMode() {
-  const lic = license.canUse();
-  if (!lic.ok) {
-    console.error('[KARDEX] Licencia no disponible, el servidor no arranca:', lic.reason);
-    if (Notification.isSupported()) {
-      new Notification({
-        title: 'KARDEX · Licencia vencida',
-        body: 'La licencia del servidor no es válida: ' + lic.reason + '. Actívala en modo normal.',
-        silent: false
-      }).show();
-    }
-    setTimeout(() => { app.exit(1); }, 2500);
-    return;
-  }
-  const licSt = license.getStatus();
-  const maxNodes = (licSt.license && Number(licSt.license.seats)) || 0;
-  const maxEmployees = license.maxEmployees();
-  const cfg = config.load(configPath());
-  const dir = dataDir();
-  const info = await dbServer.start({ port: cfg.serverPort, token: cfg.token, dataDir: dir, maxNodes, maxEmployees });
-  const serverName = cfg.serverName || config.DEFAULT_NAME;
-  await discovery.startDiscovery({
-    rpcPort: info.port,
-    name: serverName,
-    tokenRequired: !!cfg.token,
-    ocr: true
-  });
-  registerServerIpc();
-  createServerTray(info, dir, serverName);
-  createServerPanel();
-  openServerPanel();
-  const addrs = lanIps().map((ip) => 'http://' + ip + ':' + info.port);
-  const hint = addrs.length ? addrs.join('  ') : 'http://localhost:' + info.port;
-  if (Notification.isSupported()) {
-    new Notification({
-      title: 'KARDEX Digital · Servidor activo',
-      body: 'Los clientes deben conectarse a:\n' + hint + '\n\nDoble clic en el icono para abrir el panel.',
-      silent: false
-    }).show();
-  }
-  console.log('[KARDEX] Servidor escuchando en puerto', info.port, '· datos en', dir);
-  dbServer.autoBackupIfDue();
-  setInterval(() => dbServer.autoBackupIfDue(), 24 * 60 * 60 * 1000).unref();
-  if (isSmoke) {
-    console.log('SMOKE: servidor iniciado OK en puerto', info.port);
-    setTimeout(() => { app.exit(0); }, 3000);
   }
 }
 
@@ -494,7 +257,6 @@ function runAutoBackupIfDue() {
 }
 
 function registerIpc() {
-  registerServerHelperIpc();
 
   ipcMain.handle('update:check', wrap(async () => {
     try {
@@ -521,59 +283,25 @@ function registerIpc() {
     const cfgExists = fs.existsSync(configPath());
     const cloudActive = cfg.cloud && cfg.cloud.enabled && cfg.cloud.url;
     return {
-      mode: isServer ? 'server' : (cloudActive ? 'cloud' : (cfg.serverUrl ? 'client' : (cfg.serverMode === 'server' ? 'server' : 'local'))),
-      serverMode: isServer ? 'server' : cfg.serverMode,
-      url: cfg.serverUrl || '',
-      token: cfg.token || '',
+      mode: cloudActive ? 'cloud' : 'local',
       cloud: { url: cfg.cloud.url || '', token: cfg.cloud.token || '', enabled: !!cfg.cloud.enabled },
-      serverPort: cfg.serverPort,
-      serverName: cfg.serverName || config.DEFAULT_NAME,
       dataDir: dataDir(),
-      isServer,
-      firstRun: !cfgExists && !cfg.wizardDone && !cfg.serverUrl && cfg.serverMode !== 'server' && !(cfg.cloud && cfg.cloud.enabled),
-      lanIps: discovery.lanIps(),
-      discoveryPort: discovery.DEFAULT_PORT
+      firstRun: !cfgExists && !cfg.wizardDone && !(cfg.cloud && cfg.cloud.enabled)
     };
   }));
 
-  ipcMain.handle('system:set-config', wrap((e, { url, token, port, mode, name } = {}) => {
-    const m = mode === 'client' || mode === 'server' ? mode : 'local';
-    if (m === 'client') {
+  ipcMain.handle('system:set-config', wrap((e, { mode, url } = {}) => {
+    // La app solo ofrece modo local y modo cloud (se eliminó el servidor LAN).
+    // Al volver a local se desactiva la conexión a la nube para que el reinicio
+    // (openDb) respete la elección y no vuelva a conectar donde no corresponde.
+    const cloudOff = { url: '', token: '', enabled: false };
+    if (mode === 'cloud') {
       const clean = String(url || '').trim().replace(/\/+$/, '');
-      config.save(configPath(), { url: clean, token: String(token || ''), mode: 'client' });
-    } else if (m === 'server') {
-      const sName = (name !== undefined && String(name).trim()) ? String(name).trim() : undefined;
-      config.save(configPath(), {
-        url: '',
-        token: String(token || ''),
-        port: Number(port) || config.DEFAULT_PORT,
-        name: sName,
-        mode: 'server'
-      });
+      config.save(configPath(), { url: clean, mode: 'cloud', cloud: { url: clean, token: '', enabled: true } });
     } else {
-      config.save(configPath(), { url: '', token: '', mode: 'local' });
+      config.save(configPath(), { url: '', mode: 'local', cloud: cloudOff });
     }
     return config.load(configPath());
-  }));
-
-  ipcMain.handle('system:test-server', wrap(async (e, { url, token } = {}) => {
-    const u = String(url || '').trim().replace(/\/+$/, '');
-    if (!/^https?:\/\//.test(u)) throw new Error('La dirección debe comenzar con http:// o https://');
-    const resp = await fetch(u + '/ping', {
-      signal: AbortSignal.timeout(6000),
-      headers: token ? { 'x-kardex-token': String(token) } : {}
-    });
-    const text = await resp.text();
-    let j;
-    try { j = JSON.parse(text); }
-    catch (e) { throw new Error('El servidor respondió de forma inválida'); }
-    if (!resp.ok || !j.ok) throw new Error(j.error || 'El servidor no reconoció la solicitud');
-    return j;
-  }));
-
-  ipcMain.handle('system:discover', wrap(async () => {
-    const list = await discovery.discoverServers();
-    return { list };
   }));
 
   ipcMain.handle('system:set-cloud', wrap((e, { url, token, enabled } = {}) => {
@@ -753,23 +481,8 @@ function registerIpc() {
         return await processCedulaCloud(filePath, cfg.cloud.url, cfg.cloud.token);
       } catch (err) {
         // Si el servidor cloud no expone aún el endpoint OCR, seguimos bajando
-        // de nivel (servidor LAN → local) en lugar de bloquear la carga.
+        // al OCR local en lugar de bloquear la carga.
         if (err && err.code !== 'OCR_REMOTE_UNAVAILABLE') throw err;
-      }
-    }
-    // En modo cliente conectado a un servidor LAN que ofrece OCR remoto, delegamos
-    // el procesamiento al equipo servidor (p.ej. la PC de 64 bits donde el OCR
-    // funciona) en lugar de ejecutar el OCR localmente (frágil en 32 bits).
-    if (cfg.serverUrl) {
-      try {
-        return await processCedulaRemote(filePath, cfg.serverUrl, cfg.token);
-      } catch (err) {
-        // Si el servidor no expone el endpoint OCR (versión antigua), degradamos
-        // al OCR local para no bloquear la carga de la cédula.
-        if (err && err.code === 'OCR_REMOTE_UNAVAILABLE') {
-          return await processFile(filePath);
-        }
-        throw err;
       }
     }
     return await processFile(filePath);
@@ -1064,6 +777,13 @@ function registerIpc() {
     return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio, db.salarioHistorial.listForEmployee);
   }));
 
+  ipcMain.handle('salarios:reset-base', wrap((e) => {
+    const user = requireRole(['admin']);
+    const res = db.salarioHistorial.resetBaseline();
+    db.audit.add(user, 'salarios:reset-base', `Historial de salarios reiniciado (año ${res.anio}, base aplicada a ${res.registros} empleados)`);
+    return res;
+  }));
+
   ipcMain.handle('export:excel', wrap(async (e, { filename, sheets } = {}) => {
     requireRole(['admin', 'editor']);
     const res = await dialog.showSaveDialog(mainWindow, {
@@ -1129,6 +849,40 @@ function registerIpc() {
     return db.reportes.antiguedad();
   }));
 
+  ipcMain.handle('reportes:print', wrap(async (e, { title = '', html = '' } = {}) => {
+    requireAuth();
+    return new Promise((resolve, reject) => {
+      const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+      win.webContents.on('did-finish-load', async () => {
+        try {
+          await win.webContents.print({ silent: false, printBackground: true });
+          resolve(true);
+        } catch (err) { reject(err); }
+        finally { win.close(); }
+      });
+      win.webContents.on('did-fail-load', () => { reject(new Error('No se pudo abrir la impresión')); win.close(); });
+      win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    });
+  }));
+
+  ipcMain.handle('reportes:pdf', wrap(async (e, { title = '', html = '' } = {}) => {
+    const user = requireRole(['admin', 'editor']);
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const buf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'Letter' });
+    win.destroy();
+    const fname = sanitizeFilename(String(title).toLowerCase() || 'reporte');
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Guardar reporte PDF',
+      defaultPath: path.join(app.getPath('documents'), `${fname}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (res.canceled || !res.filePath) return null;
+    fs.writeFileSync(res.filePath, buf);
+    db.audit.add(user, 'reportes:pdf', title);
+    return res.filePath;
+  }));
+
   ipcMain.handle('reportes:cumpleanos', wrap((e, { mes } = {}) => {
     requireRole(['admin', 'editor']);
     return db.reportes.cumpleanos(mes);
@@ -1137,6 +891,31 @@ function registerIpc() {
   ipcMain.handle('reportes:departamentos', wrap(() => {
     requireRole(['admin', 'editor']);
     return db.reportes.departamentos();
+  }));
+
+  ipcMain.handle('reportes:nomina-departamentos', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.nominaDepartamentos();
+  }));
+
+  ipcMain.handle('reportes:empleados', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.empleadosCompleto();
+  }));
+
+  ipcMain.handle('reportes:cedulas-vencer', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.cedulasVencer();
+  }));
+
+  ipcMain.handle('reportes:aniversarios', wrap((e, { anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.aniversarios(anio);
+  }));
+
+  ipcMain.handle('reportes:beneficios', wrap(() => {
+    requireRole(['admin', 'editor']);
+    return db.reportes.beneficios();
   }));
 
   ipcMain.handle('vacaciones:list', wrap((e, { employee_id } = {}) => {
@@ -1184,52 +963,17 @@ function registerIpc() {
     return true;
   }));
 
-  ipcMain.handle('correos:settings', wrap(() => {
+  ipcMain.handle('correos:mailto', wrap(async (e, { to = '', subject = '', body = '', cc = '' } = {}) => {
     requireRole(['admin', 'editor']);
-    return correos.getSettings();
-  }));
-
-  ipcMain.handle('correos:saveSettings', wrap((e, { settings } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const saved = correos.saveSettings(settings || {});
-    db.audit.add(user, 'correos:saveSettings', 'Configuración SMTP actualizada');
-    return saved;
-  }));
-
-  ipcMain.handle('correos:test', wrap(async () => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.testMail();
-    db.audit.add(user, 'correos:test', `Prueba enviada a ${r.to}`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendCedulas', wrap(async (e, { employee_ids } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendCedulas(employee_ids);
-    db.audit.add(user, 'correos:sendCedulas', `${r.sent} enviado(s)`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendNomina', wrap(async (e, { mes, anio, employee_ids, vista } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const v = vista || 'mensual';
-    const r = await correos.sendNomina({ mes, anio, employeeIds: employee_ids, vista: v });
-    db.audit.add(user, 'correos:sendNomina', `${r.sent} enviado(s) (${v} ${mes}/${anio})`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendReminders', wrap(async () => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendReminders();
-    db.audit.add(user, 'correos:sendReminders', `${r.sent} recordatorio(s) enviado(s)`);
-    return r;
-  }));
-
-  ipcMain.handle('correos:sendCustom', wrap(async (e, { employee_ids, to, subject, text, attachments } = {}) => {
-    const user = requireRole(['admin', 'editor']);
-    const r = await correos.sendCustom({ employeeIds: employee_ids, to, subject, text, attachments });
-    db.audit.add(user, 'correos:sendCustom', `${r.sent} enviado(s)`);
-    return r;
+    try {
+      const params = [];
+      if (subject) params.push('subject=' + encodeURIComponent(subject));
+      if (body) params.push('body=' + encodeURIComponent(body));
+      if (cc) params.push('cc=' + encodeURIComponent(cc));
+      const url = 'mailto:' + encodeURIComponent(to) + (params.length ? '?' + params.join('&') : '');
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (err) { return { ok: false, error: err.message }; }
   }));
 
   ipcMain.handle('correos:log', wrap((e, { limit } = {}) => {
@@ -1530,11 +1274,6 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('update:error', { message: err.message });
     }
   });
-  if (process.argv.includes('--server') || cfg.serverMode === 'server' || process.env.KARDEX_SERVER_MODE === '1') {
-    isServer = true;
-    await startServerMode();
-    return;
-  }
   await openDb();
   registerIpc();
   createWindow();
@@ -1578,14 +1317,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' && !isServer) app.quit();
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   try {
-    discovery.stopDiscovery();
-    if (isServer) dbServer.close();
-    else if (db) db.close();
+    if (db) db.close();
   } catch (e) { /* noop */ }
 });
 

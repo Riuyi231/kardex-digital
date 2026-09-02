@@ -772,6 +772,15 @@ const salarioHistorial = {
   listForEmployee(employeeId) {
     return all('SELECT * FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio', [Number(employeeId)]);
   },
+  resetBaseline() {
+    const y = new Date().getFullYear();
+    const base = `${y}-01-01 00:00:00`;
+    run('DELETE FROM salario_historial');
+    run(`INSERT INTO salario_historial (employee_id, salario, salario_anterior, tipo_salario, fecha_cambio, motivo)
+      SELECT id, salario, salario, tipo_salario, ?, 'Reinicio de base — salario real cargado'
+      FROM employees WHERE status = 'activo' AND salario > 0`, [base]);
+    return { anio: y, base, registros: db.getRowsModified() };
+  },
   getSalarioPromedio(employeeId, anio) {
     // Todos los registros de cambio de salario
     const allChanges = all('SELECT salario, salario_anterior, fecha_cambio FROM salario_historial WHERE employee_id = ? ORDER BY fecha_cambio',
@@ -874,6 +883,48 @@ const reportes = {
   },
   departamentos() {
     return employees.stats().departamentos;
+  },
+  nominaDepartamentos() {
+    const activos = all(`SELECT departamento, salario, tipo_salario FROM employees
+      WHERE status = 'activo' AND salario > 0 ORDER BY departamento`);
+    const by = {};
+    for (const r of activos) {
+      const k = r.departamento || 'Sin departamento';
+      if (!by[k]) by[k] = { departamento: k, empleados: 0, total_salario: 0, quincenal: 0, semanal: 0 };
+      by[k].empleados += 1;
+      by[k].total_salario += Number(r.salario) || 0;
+      if (r.tipo_salario === 'quincenal') by[k].quincenal += 1;
+      else if (r.tipo_salario === 'semanal') by[k].semanal += 1;
+      else by[k].mensual = (by[k].mensual || 0) + 1;
+    }
+    return Object.keys(by).sort().map(k => by[k]);
+  },
+  empleadosCompleto() {
+    return all(`SELECT id, cedula, nombres, apellidos, sexo, nacionalidad, lugar_nacimiento, fecha_nacimiento,
+        estado_civil, profesion, puesto, departamento, sucursal, email, telefono, ciudad,
+        fecha_ingreso, tipo_contrato, salario, tipo_salario, banco, cuenta, nss, ars, afp, status, fecha_vencimiento
+      FROM employees WHERE status = 'activo' ORDER BY apellidos, nombres`);
+  },
+  cedulasVencer() {
+    return all(`SELECT id, cedula, nombres, apellidos, fecha_vencimiento, puesto, departamento, status
+      FROM employees WHERE status = 'activo' AND fecha_vencimiento != ''
+      ORDER BY substr(fecha_vencimiento, 7, 4), substr(fecha_vencimiento, 4, 2)`);
+  },
+  aniversarios(anio) {
+    const y = Number(anio) || new Date().getFullYear();
+    return all(`SELECT id, cedula, nombres, apellidos, fecha_ingreso, puesto, departamento
+      FROM employees WHERE status = 'activo' AND fecha_ingreso != ''
+      ORDER BY substr(fecha_ingreso, 4, 2), substr(fecha_ingreso, 7, 2)`).map(r => {
+      const ing = r.fecha_ingreso;
+      const m = ing.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const anioIng = m ? Number(m[3]) : null;
+      r.anios = anioIng && anioIng <= y ? y - anioIng : 0;
+      return r;
+    }).filter(r => r.anios > 0);
+  },
+  beneficios() {
+    return all(`SELECT id, cedula, nombres, apellidos, ars, afp, nss, puesto, departamento
+      FROM employees WHERE status = 'activo' ORDER BY departamento, apellidos, nombres`);
   }
 };
 

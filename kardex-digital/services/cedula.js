@@ -166,11 +166,21 @@ async function processFile(filePath) {
   const missing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
   if (missing.length && front && !ocrFailed) {
     try {
+      // Segunda pasada priorizando solo el anverso (los campos faltantes —nombres,
+      // apellidos, lugar de nacimiento, profesión— residen en el frente). Esto evita
+      // re-escalar/re-renderizar el reverso (costoso) cuando no hace falta.
       const f2 = await recognizeDetailed(await upscale(front.buffer, 2));
-      const b2 = back ? await recognizeDetailed(await upscale(back.buffer, 2)) : { text: '', words: [] };
-      const fields2 = parseCedula(f2, b2);
+      const parsed = parseCedula(f2, ocrBack);
       for (const k of missing) {
-        if (fields2[k] && !fields[k]) fields[k] = fields2[k];
+        if (parsed[k] && !fields[k]) fields[k] = parsed[k];
+      }
+      let stillMissing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
+      if (stillMissing.length && back) {
+        const b2 = await recognizeDetailed(await upscale(back.buffer, 2));
+        const parsed2 = parseCedula(f2, b2);
+        for (const k of stillMissing) {
+          if (parsed2[k] && !fields[k]) fields[k] = parsed2[k];
+        }
       }
     } catch (e) { /* noop */ }
   }

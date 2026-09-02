@@ -78,11 +78,19 @@ async function handle(id, payloadStr) {
       'authorization': cfg.token ? 'Bearer ' + cfg.token : ''
     }, payloadStr, cfg.timeoutMs);
     let j;
+    const retryable = resp.status === 429 || resp.status === 503 || resp.status === 408;
     try { j = JSON.parse(resp.text); }
-    catch (e) { j = { ok: false, error: 'Respuesta invalida del servidor (HTTP ' + resp.status + ')' }; }
-    out = j && j.ok ? { ok: true, data: j.data } : { ok: false, error: (j && j.error) || 'Error del servidor' };
+    catch (e) {
+      j = retryable
+        ? { ok: false, error: 'El servidor está ocupado, espere unos segundos (HTTP ' + resp.status + ')' }
+        : { ok: false, error: 'Respuesta invalida del servidor (HTTP ' + resp.status + ')' };
+    }
+    if (!j.retryable && retryable) j.retryable = true;
+    out = j && j.ok ? { ok: true, data: j.data }
+      : { ok: false, error: (j && j.error) || 'Error del servidor', retryable: !!(j && j.retryable), status: resp.status };
   } catch (e) {
-    out = { ok: false, error: (e && e.message) ? e.message : String(e) };
+    const msg = (e && e.message) ? e.message : String(e);
+    out = { ok: false, error: msg, retryable: true };
   }
   let outStr = JSON.stringify(out);
   let outBuf = Buffer.from(outStr, 'utf8');
@@ -156,10 +164,13 @@ function waitResponse(expectedId, msLeft) {
   }
 }
 
-function rpc(ns, method, args) {
-  if (netCooldownUntil > Date.now() && netError) {
-    throw new Error('Servidor cloud no disponible: ' + netError);
-  }
+const sleepView = new Int32Array(new SharedArrayBuffer(4));
+function sleepSync(ms) {
+  if (ms <= 0) return;
+  Atomics.wait(sleepView, 0, 0, ms);
+}
+
+function doRpcOnce(ns, method, args) {
   ensureWorker();
   const id = nextId++;
   const payload = JSON.stringify({ ns: ns || null, method, args: args || [] });
@@ -174,21 +185,39 @@ function rpc(ns, method, args) {
   Atomics.notify(reqView, 0, 1);
 
   const text = waitResponse(id, MAIN_WAIT_MS);
-  if (text == null) {
-    throw new Error('El servidor cloud no respondio (tiempo de espera agotado)');
-  }
+  if (text == null) throw Object.assign(new Error('El servidor cloud no respondio (tiempo de espera agotado)'), { retryable: true });
   let j;
   try { j = JSON.parse(text); }
   catch (e) { throw new Error('Respuesta invalida del servidor cloud'); }
   if (!j.ok) {
     const err = new Error(j.error || 'Error del servidor cloud');
-    if (/fetch|ECONN|network|socket|abort|no respondio/i.test(String(j.error)) || String(j.error).includes('no disponible')) {
+    err.retryable = !!(j && j.retryable);
+    if (j && (j.retryable || /fetch|ECONN|network|socket|abort|no respondio|ocupado/i.test(String(j.error)))) {
       netError = j.error;
       netCooldownUntil = Date.now() + NET_COOLDOWN_MS;
     }
     throw err;
   }
   return j.data;
+}
+
+function rpc(ns, method, args) {
+  if (netCooldownUntil > Date.now() && netError) {
+    throw new Error('Servidor cloud no disponible: ' + netError);
+  }
+  let attempt = 0;
+  for (;;) {
+    try {
+      const data = doRpcOnce(ns, method, args);
+      if (netError) { netError = null; netCooldownUntil = 0; }
+      return data;
+    } catch (e) {
+      if (!e.retryable || attempt >= 2) throw e;
+      const wait = Math.min(1500, 350 * Math.pow(2, attempt)) + Math.floor(Math.random() * 200);
+      sleepSync(wait);
+      attempt++;
+    }
+  }
 }
 
 function configure(opts) {
@@ -226,7 +255,7 @@ async function ping() {
       req2.end();
     });
     const j = JSON.parse(resp.text);
-    return resp.ok ? { ok: true, data: j } : { ok: false, error: (j && j.error) || 'HTTP ' + resp.status };
+    return resp.status === 200 ? { ok: true, data: j } : { ok: false, error: (j && j.error) || 'HTTP ' + resp.status };
   } catch (e) {
     return { ok: false, error: (e && e.message) ? e.message : String(e) };
   }
@@ -297,10 +326,10 @@ module.exports = {
   liquidaciones: makeNs('liquidaciones', ['listForEmployee', 'listAll', 'save', 'delete']),
   incentivos: makeNs('incentivos', ['listForPeriod', 'list', 'create', 'update', 'delete']),
   deduccionesManuales: makeNs('deduccionesManuales', ['listForPeriod', 'listForEmployee', 'create', 'update', 'delete']),
-  salarioHistorial: makeNs('salarioHistorial', ['listForEmployee', 'record', 'getSalarioPromedio']),
+  salarioHistorial: makeNs('salarioHistorial', ['listForEmployee', 'record', 'getSalarioPromedio', 'resetBaseline']),
   pagoVacaciones: makeNs('pagoVacaciones', ['get', 'listForPeriod', 'totalDiasPagados', 'save', 'delete']),
   vacaciones: makeNs('vacaciones', ['list', 'create', 'delete']),
-  reportes: makeNs('reportes', ['plantilla', 'antiguedad', 'cumpleanos', 'departamentos']),
+  reportes: makeNs('reportes', ['plantilla', 'antiguedad', 'cumpleanos', 'departamentos', 'nominaDepartamentos', 'empleadosCompleto', 'cedulasVencer', 'aniversarios', 'beneficios']),
   audit: makeNs('audit', ['add', 'list']),
   mailLog: makeNs('mailLog', ['add', 'list']),
   contactos: makeNs('contactos', ['list', 'get', 'create', 'update', 'delete']),

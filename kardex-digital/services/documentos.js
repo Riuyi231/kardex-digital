@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('./active-db');
 const pdf = require('./pdf');
 
 const KEYS = [

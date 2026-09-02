@@ -1,6 +1,6 @@
 // Envío de correos electrónicos vía SMTP (nodemailer). Configuración guardada en db.settings.
 const nodemailer = require('nodemailer');
-const db = require('./db');
+const db = require('./active-db');
 const pdf = require('./pdf');
 const excel = require('./excel');
 const nomina = require('./nomina');

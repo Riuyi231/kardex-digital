@@ -122,11 +122,12 @@
     $('btn-import-excel-header').classList.toggle('hidden', !canEdit());
     $('btn-historial-finiquitos').classList.toggle('hidden', !canEdit());
     $('btn-inactivos-excel').classList.toggle('hidden', !canEdit());
-    go('empleados');
+    $('salarios-maint-card').classList.toggle('hidden', !isAdmin());
+    go('dashboard');
     loadNotificaciones();
   }
 
-  /* ============ Conexión al servidor ============ */
+  /* ============ Conexión (local o nube) ============ */
   async function loadConnStatus() {
     const el = $('conn-status');
     try {
@@ -150,37 +151,16 @@
         }
         return;
       }
-      if (!cfg.url) {
-        el.textContent = 'Base de datos local de esta PC';
-        el.className = 'conn-status';
-        return;
-      }
-      el.textContent = 'Verificando servidor: ' + cfg.url + '…';
+      el.textContent = 'Base de datos local de esta PC';
       el.className = 'conn-status';
-      const t = await window.api.testServer(cfg.url, cfg.token);
-      if (t && t.ok) {
-        el.textContent = 'Servidor conectado: ' + cfg.url;
-        el.className = 'conn-status ok';
-      } else {
-        throw new Error(t && t.error ? t.error : 'sin respuesta');
-      }
     } catch (e) {
-      el.textContent = 'Servidor no alcanzable: ' + (e && e.message ? e.message : 'error');
+      el.textContent = 'No se pudo verificar la conexión: ' + (e && e.message ? e.message : 'error');
       el.className = 'conn-status err';
     }
   }
 
   let connMode = 'local';
   let connCfg = null;
-
-  function randomToken(len = 24) {
-    const bytes = new Uint8Array(len);
-    crypto.getRandomValues(bytes);
-    let s = '';
-    const alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    for (const b of bytes) s += alpha[b % alpha.length];
-    return s;
-  }
 
   function setConnMode(mode) {
     connMode = mode;
@@ -189,47 +169,11 @@
       card.classList.toggle('selected', selected);
       card.querySelector('input').checked = selected;
     });
-    $('conn-client').classList.toggle('hidden', mode !== 'client');
-    $('conn-server').classList.toggle('hidden', mode !== 'server');
+    $('conn-local').classList.toggle('hidden', mode !== 'local');
     $('conn-cloud').classList.toggle('hidden', mode !== 'cloud');
-    $('btn-server-test').classList.toggle('hidden', mode !== 'client');
-    const box = $('server-test-result');
-    box.className = 'error-box hidden';
-    box.textContent = '';
-    $('discover-results').innerHTML = '';
-    if (mode === 'server' && !$('server-token-gen').value.trim()) {
-      $('server-token-gen').value = randomToken();
-    }
     if (mode === 'cloud') {
       const saved = connCfg && connCfg.cloud && connCfg.cloud.token;
       $('cloud-saved-note').textContent = saved ? '✓ Acceso guardado para esta dirección. Puedes reconectar.' : '';
-    }
-  }
-
-  function setAdvanced(open) {
-    $('server-advanced').classList.toggle('hidden', !open);
-    $('server-advanced-caret').textContent = open ? '▴' : '▾';
-  }
-
-  async function firewallFixFromModal() {
-    const box = $('firewall-fix-result');
-    const btn = $('btn-firewall-fix');
-    box.className = 'error-box';
-    box.classList.remove('hidden');
-    box.textContent = 'Solicitando permiso de administrador… Acepta la ventana de Windows.';
-    btn.disabled = true;
-    try {
-      const res = await window.api.serverFirewallFix({ tcpPort: Number($('server-port').value) || 18006, udpPort: 18007 });
-      if (res && res.ok) {
-        box.textContent = '✓ Firewall configurado. Tu servidor será visible para las demás PCs.';
-        box.className = 'error-box success';
-      } else {
-        box.textContent = (res && res.error) || 'No se pudo configurar el Firewall.';
-      }
-    } catch (e) {
-      box.textContent = (e && e.message) || 'No se pudo configurar el Firewall.';
-    } finally {
-      btn.disabled = false;
     }
   }
 
@@ -239,122 +183,16 @@
       if (res && res.ok) {
         connCfg = res.data;
         const c = res.data;
-        $('server-url').value = c.url || '';
-        $('server-token').value = c.token || '';
-        $('server-port').value = c.serverPort || 18006;
-        $('server-name-gen').value = c.serverName || 'kardex';
-        $('lan-port-hint').textContent = c.serverPort || 18006;
-        $('server-token-gen').value = c.token || '';
         $('cloud-url').value = (c.cloud && c.cloud.url) || '';
-        const mode = (c.mode && ['local', 'client', 'server', 'cloud'].includes(c.mode)) ? c.mode : 'local';
+        const mode = (c.mode && ['local', 'cloud'].includes(c.mode)) ? c.mode : 'local';
         setConnMode(mode);
-        $('server-lan-ips').innerHTML = (c.lanIps && c.lanIps.length
-          ? c.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (c.serverPort || 18006) + '</span>').join('')
-          : '<span>No se detectaron IPs de red en esta PC</span>');
       }
     } catch (e) { /* noop */ }
-    setAdvanced(false);
-    $('firewall-fix-result').className = 'error-box hidden';
     $('server-modal').classList.remove('hidden');
-    if (connMode === 'client') $('server-url').focus();
   }
 
   function closeServerConfig() {
     $('server-modal').classList.add('hidden');
-  }
-
-  async function discoverServers() {
-    const box = $('discover-results');
-    box.innerHTML = '<div class="muted">Buscando servidores en la red…</div>';
-    try {
-      const res = await window.api.discoverServers();
-      const list = (res && res.ok && res.data && Array.isArray(res.data.list)) ? res.data.list : [];
-      if (!list.length) {
-        box.innerHTML = '<div class="muted">No se encontró ningún servidor. Verifica que el servidor esté activo y que el Firewall permita el puerto UDP 18007.</div>';
-        return;
-      }
-      box.innerHTML = list.map((s) =>
-        '<div class="discover-item">' +
-          '<span class="d-name">' + esc(s.name) + '</span>' +
-          '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-          (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge no-token">sin token</span>') +
-          '<button class="btn btn-ghost d-use" data-url="http://' + esc(s.host) + ':' + esc(s.port) + '" data-token="' + (s.tokenRequired ? 'true' : '') + '">Usar</button>' +
-        '</div>'
-      ).join('');
-      box.querySelectorAll('.d-use').forEach((btn) => btn.addEventListener('click', () => {
-        $('server-url').value = btn.dataset.url;
-        $('discover-results').innerHTML = '';
-        if (btn.dataset.token === 'true') $('server-token').focus();
-      }));
-    } catch (e) {
-      box.innerHTML = '<div class="muted">Error buscando servidores: ' + esc(e && e.message ? e.message : 'error') + '</div>';
-    }
-  }
-
-  async function connectByName() {
-    const term = $('server-name').value.trim();
-    if (!term) { toast('Escribe el nombre del servidor (ej. kardex)', 'error'); $('server-name').focus(); return; }
-    const box = $('discover-results');
-    box.innerHTML = '<div class="muted">Buscando "' + esc(term) + '" en la red…</div>';
-    try {
-      const res = await window.api.discoverServers();
-      const list = (res && res.ok && res.data && Array.isArray(res.data.list)) ? res.data.list : [];
-      const t = term.toLowerCase();
-      const hits = list.filter((s) => (s.name || '').toLowerCase().includes(t) || (s.host || '').toLowerCase().includes(t));
-      if (!hits.length) {
-        box.innerHTML = '<div class="muted">No se encontró ningún servidor llamado "' + esc(term) +
-          '". Verifica el nombre en el panel del servidor y que el Firewall permita el puerto UDP 18007.</div>';
-        return;
-      }
-      if (hits.length === 1) {
-        const s = hits[0];
-        $('server-url').value = 'http://' + s.host + ':' + s.port;
-        box.innerHTML =
-          '<div class="discover-item">' +
-            '<span class="d-name">' + esc(s.name) + '</span>' +
-            '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-            (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge">sin token</span>') +
-          '</div>' +
-          '<div class="muted" style="margin-top:6px">✓ Servidor encontrado. ' +
-          (s.tokenRequired ? 'Escribe el token y pulsa <b>Probar conexión</b>.' : 'Pulsa <b>Aplicar y reiniciar</b> para conectar.') + '</div>';
-        if (s.tokenRequired) $('server-token').focus();
-        return;
-      }
-      box.innerHTML = hits.map((s) =>
-        '<div class="discover-item">' +
-          '<span class="d-name">' + esc(s.name) + '</span>' +
-          '<span class="d-url">http://' + esc(s.host) + ':' + esc(s.port) + '</span>' +
-          (s.tokenRequired ? '<span class="d-badge">requiere token</span>' : '<span class="d-badge">sin token</span>') +
-          '<button class="btn btn-ghost d-use" data-url="http://' + esc(s.host) + ':' + esc(s.port) + '" data-token="' + (s.tokenRequired ? 'true' : '') + '">Usar</button>' +
-        '</div>'
-      ).join('');
-      box.querySelectorAll('.d-use').forEach((btn) => btn.addEventListener('click', () => {
-        $('server-url').value = btn.dataset.url;
-        $('discover-results').innerHTML = '';
-        if (btn.dataset.token === 'true') $('server-token').focus();
-      }));
-    } catch (e) {
-      box.innerHTML = '<div class="muted">Error buscando el servidor: ' + esc(e && e.message ? e.message : 'error') + '</div>';
-    }
-  }
-
-  async function testServerConnection() {
-    const box = $('server-test-result');
-    box.className = 'error-box';
-    box.classList.remove('hidden');
-    box.textContent = 'Probando…';
-    try {
-      const res = await window.api.testServer($('server-url').value, $('server-token').value);
-      if (res && res.ok) {
-        box.textContent = 'Conexión exitosa. El servidor está disponible.';
-        box.className = 'error-box success';
-      } else {
-        throw new Error(res && res.error ? res.error : 'sin respuesta');
-      }
-    } catch (e) {
-      box.textContent = (e && e.message) || 'No se pudo conectar';
-      box.className = 'error-box';
-    }
   }
 
   async function testCloudConnection() {
@@ -420,35 +258,15 @@
         setTimeout(() => window.api.restartApp(), 1200);
         return;
       }
-      if (mode === 'client') {
-        const url = $('server-url').value.trim().replace(/\/+$/, '');
-        if (!url) throw new Error('Escribe la dirección del servidor (ej. http://192.168.1.50:18006)');
-        if (!/^https?:\/\//i.test(url)) throw new Error('La dirección debe comenzar con http:// o https://');
-        const token = $('server-token').value.trim();
-        const res = await window.api.setServerConfig({ mode: 'client', url, token });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Conectando al servidor. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
-      } else if (mode === 'server') {
-        const port = Number($('server-port').value);
-        if (!port || port < 1 || port > 65535) throw new Error('Elige un puerto válido entre 1 y 65535');
-        const token = $('server-token-gen').value.trim();
-        const name = $('server-name-gen').value.trim();
-        const res = await window.api.setServerConfig({ mode: 'server', port, token, name });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Iniciando el servidor en este equipo. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
-      } else {
-        if (connCfg && connCfg.mode === 'local' && !connCfg.url) {
-          closeServerConfig();
-          toast('Configuración actual: base de datos local', 'info', 1200);
-          return;
-        }
-        const res = await window.api.setServerConfig({ mode: 'local' });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Volviendo a base de datos local. Reiniciando…', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1200);
+      if (connCfg && connCfg.mode === 'local' && !(connCfg.cloud && connCfg.cloud.enabled)) {
+        closeServerConfig();
+        toast('Configuración actual: base de datos local', 'info', 1200);
+        return;
       }
+      const res = await window.api.setServerConfig({ mode: 'local' });
+      if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
+      toast('Volviendo a base de datos local. Reiniciando…', 'info', 1500);
+      setTimeout(() => window.api.restartApp(), 1200);
     } catch (e) {
       toast((e && e.message) || 'Error guardando la configuración', 'error');
     }
@@ -481,39 +299,17 @@
     try { await window.api.wizardDone(); } catch (e) { /* noop */ }
     $('wizard-modal').classList.add('hidden');
     if (wizardMode === 'local') return;
-    if (wizardMode === 'server') {
-      // Un clic: se crea el servidor con valores recomendados (nombre, puerto y token automático).
-      const port = 18006;
-      const token = randomToken();
-      try {
-        const res = await window.api.setServerConfig({ mode: 'server', port, token, name: 'kardex' });
-        if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Error');
-        toast('Acepta la ventana de Windows para configurar el Firewall…', 'info', 2500);
-        try { await window.api.serverFirewallFix({ tcpPort: port, udpPort: 18007 }); } catch (e) { /* no importa si se cancela */ }
-        toast('Creando el servidor… Reiniciando.', 'info', 1500);
-        setTimeout(() => window.api.restartApp(), 1800);
-      } catch (e) {
-        toast((e && e.message) || 'Error creando el servidor', 'error');
-      }
-      return;
-    }
+    // Modo nube: se abre la ventana de conexión para introducir URL + credenciales.
     try {
       const res = await window.api.getServerConfig();
       if (res && res.ok) {
         connCfg = res.data;
-        $('server-port').value = res.data.serverPort || 18006;
-        $('server-name-gen').value = res.data.serverName || 'kardex';
-        $('lan-port-hint').textContent = res.data.serverPort || 18006;
         $('cloud-url').value = (res.data.cloud && res.data.cloud.url) || '';
-        $('server-lan-ips').innerHTML = (res.data.lanIps && res.data.lanIps.length
-          ? res.data.lanIps.map((ip) => '<span>http://' + esc(ip) + ':' + (res.data.serverPort || 18006) + '</span>').join('')
-          : '<span>No se detectaron IPs de red en esta PC</span>');
       }
     } catch (e) { /* noop */ }
-    setConnMode(wizardMode);
+    setConnMode('cloud');
     $('server-modal').classList.remove('hidden');
-    if (wizardMode === 'client') $('server-url').focus();
-    if (wizardMode === 'cloud') $('cloud-url').focus();
+    $('cloud-url').focus();
   }
 
   /* ============ Licencia ============ */
@@ -625,12 +421,13 @@
   }
 
   /* ============ Views ============ */
-  const views = { empleados: null, inactivos: null, nomina: null, reportes: null, notificaciones: null, correo: null, usuarios: null, audit: null, sistema: null };
+  const views = { dashboard: null, empleados: null, inactivos: null, nomina: null, reportes: null, notificaciones: null, correo: null, usuarios: null, audit: null, sistema: null };
   function go(name) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
-    ['empleados', 'inactivos', 'nomina', 'reportes', 'notificaciones', 'correo', 'usuarios', 'audit', 'sistema'].forEach(v => {
+    ['dashboard', 'empleados', 'inactivos', 'nomina', 'reportes', 'notificaciones', 'correo', 'usuarios', 'audit', 'sistema'].forEach(v => {
       $('view-' + v).classList.toggle('hidden', v !== name);
     });
+    if (name === 'dashboard') loadDashboard();
     if (name === 'empleados') loadEmployees();
     if (name === 'inactivos') loadInactiveEmployees();
     if (name === 'nomina') loadNomina();
@@ -642,17 +439,157 @@
     if (name === 'sistema') loadSistema();
   }
 
+  /* ============ Dashboard / Inicio ============ */
+  function escLabel(v) { return esc(String(v == null ? '' : v)); }
+  function renderBarChart(el, items, opts) {
+    const o = opts || {};
+    const max = Math.max(1, ...items.map(i => i.value));
+    const format = o.format || ((v) => v);
+    el.innerHTML = items.map(it => `
+      <div class="bar-col" title="${esc(it.label)}: ${it.value}">
+        <div class="bar-value">${format(it.value)}</div>
+        <div class="bar-track"><div class="bar-fill" style="height:${Math.max(3, Math.round((it.value / max) * 100))}%;${it.color ? 'background:' + it.color : ''}"></div></div>
+        <div class="bar-label" title="${esc(it.label)}">${escLabel(it.label)}</div>
+      </div>`).join('');
+  }
+  function monthKey(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  function monthLabel(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return d.toLocaleDateString('es', { month: 'short' }).replace('.', '') + ' ' + d.getFullYear().toString().slice(-2);
+  }
+  function fmtDshDate(v) {
+    if (!v) return '—';
+    const s = String(v);
+    const n = /^\d{4}-\d{2}-\d{2}/.test(s) ? new Date(s.slice(0, 10) + 'T00:00:00') : new Date(s);
+    if (isNaN(n.getTime())) return '—';
+    return n.toLocaleDateString('es-DO');
+  }
+  async function loadDashboard() {
+    try {
+      const [listRes, statsRes, notifRes] = await Promise.all([
+        window.api.listEmployees('', ''),
+        window.api.getStats(),
+        window.api.listNotificaciones()
+      ]);
+      if (!listRes.ok) throw new Error(listRes.error);
+      const rows = (listRes.data || []).slice();
+      const stats = (statsRes && statsRes.data) || {};
+      const active = stats.activos != null ? stats.activos : rows.filter(r => r.status === 'activo').length;
+      const inactive = stats.inactivos != null ? stats.inactivos : rows.filter(r => r.status === 'inactivo').length;
+
+      const activosCount = active;
+      const inactivosCount = inactive;
+      const total = rows.length;
+      const conCedula = rows.filter(r => r.has_images).length;
+
+      $('dsh-activos').textContent = activosCount;
+      $('dsh-inactivos').textContent = inactivosCount;
+      $('dsh-total').textContent = total;
+      $('dsh-cedula').textContent = conCedula;
+      $('dashboard-subtitle').textContent = 'Resumen general · ' + new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      const deptMap = {};
+      rows.forEach(r => { if (r.status === 'activo') { const k = (r.departamento || 'Sin departamento'); deptMap[k] = (deptMap[k] || 0) + 1; } });
+      const deptItems = Object.keys(deptMap).map(k => ({ label: k, value: deptMap[k], color: '#3b82f6' })).sort((a, b) => b.value - a.value).slice(0, 8);
+      if (!deptItems.length) $('dash-dept-card').classList.add('hidden');
+      else { $('dash-dept-card').classList.remove('hidden'); renderBarChart($('dash-dept-chart'), deptItems); }
+
+      renderBarChart($('dash-status-chart'), [
+        { label: 'Activos', value: activosCount, color: '#10b981' },
+        { label: 'Inactivos', value: inactivosCount, color: '#f59e0b' }
+      ]);
+
+      const monthly = [];
+      for (let i = 5; i >= 0; i--) {
+        const k = monthKey(i);
+        monthly.push({ key: k, label: monthLabel(i), count: 0 });
+      }
+      rows.forEach(r => {
+        const c = (r.created_at || '').slice(0, 10);
+        if (!c) return;
+        const mk = c.slice(0, 7);
+        const m = monthly.find(x => x.key === mk);
+        if (m) m.count++;
+      });
+      renderBarChart($('dash-montly-chart'), monthly.map(m => ({ label: m.label, value: m.count, color: '#8b5cf6' })));
+
+      const recent = rows.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 8);
+      $('dash-recent-note').textContent = 'Los más recientes primero (últimos ' + recent.length + ' de ' + total + ')';
+      $('dashboard-empty').classList.toggle('hidden', recent.length > 0);
+      $('dashboard-recent-tbody').innerHTML = recent.map(r => `
+        <tr>
+          <td><strong>${esc(r.cedula || '—')}</strong></td>
+          <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
+          <td>${esc(r.departamento || '—')}</td>
+          <td>${esc(r.puesto || '—')}</td>
+          <td>${esc(fmtDshDate(r.created_at))}</td>
+          <td class="row-actions">
+            <button class="btn btn-ghost btn-sm" data-open-emp="${r.id}" title="Abrir expediente">Abrir</button>
+          </td>
+        </tr>`).join('');
+
+      $('dashboard-recent-tbody').querySelectorAll('[data-open-emp]').forEach(btn => {
+        btn.addEventListener('click', () => openEmployee(btn.getAttribute('data-open-emp')));
+      });
+
+      // Próximas alertas
+      const alerts = ((notifRes && notifRes.data && notifRes.data.events) || []).slice(0, 6);
+      const notifBox = $('dash-alertas');
+      if (!alerts.length) {
+        notifBox.innerHTML = '<p class="muted small">No hay alertas próximas.</p>';
+      } else {
+        notifBox.innerHTML = alerts.map(a => `<div class="dash-alerta"><span>${esc(a.titulo)}</span><em>${a.dias < 0 ? 'Vencida' : a.dias === 0 ? 'Hoy' : 'En ' + a.dias + ' día' + (a.dias === 1 ? '' : 's')}</em></div>`).join('');
+      }
+
+      // Nómina
+      const conSalario = rows.filter(r => r.status === 'activo' && Number(r.salario) > 0);
+      const totalSalarial = conSalario.reduce((s, r) => s + (Number(r.salario) || 0), 0);
+      const n = new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' });
+      $('dash-nomina').innerHTML =
+        `<div class="dash-alerta"><span>Empleados activos con salario</span><em>${conSalario.length}</em></div>` +
+        `<div class="dash-alerta"><span>Nómina mensual estimada</span><em>${n.format(totalSalarial)}</em></div>` +
+        `<div class="dash-alerta"><span>Salario promedio</span><em>${conSalario.length ? n.format(Math.round(totalSalarial / conSalario.length)) : n.format(0)}</em></div>`;
+    } catch (e) {
+      toast('Error cargando el panel: ' + ((e && e.message) || 'error'), 'error');
+    }
+  }
+
   /* ============ Empleados ============ */
+  let empPage = 1;
+  let empAllRows = [];
+  const EMP_PAGE_SIZE = 10;
+
   async function loadEmployees() {
     const search = $('search-input').value;
     try {
       const res = await window.api.listEmployees(search, 'activo');
       if (!res.ok) throw new Error(res.error);
-      const rows = res.data;
-      $('employees-count').textContent = rows.length + ' registro(s)';
-      $('employees-empty').classList.toggle('hidden', rows.length > 0);
-      const tb = $('employees-tbody');
-      tb.innerHTML = rows.map(r => `
+      empAllRows = res.data;
+      empPage = 1;
+      renderEmployeesPage();
+      loadStats();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  function renderEmployeesPage() {
+    const rows = empAllRows;
+    const pages = Math.max(1, Math.ceil(rows.length / EMP_PAGE_SIZE));
+    if (empPage > pages) empPage = pages;
+    const start = (empPage - 1) * EMP_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + EMP_PAGE_SIZE);
+    $('employees-count').textContent = rows.length + ' registro(s)';
+    $('employees-empty').classList.toggle('hidden', rows.length > 0);
+    const tb = $('employees-tbody');
+    tb.innerHTML = pageRows.map(r => `
         <tr>
           <td><strong>${esc(r.cedula || '—')}</strong></td>
           <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
@@ -673,26 +610,45 @@
             ${canEdit() ? `<button class="btn btn-danger btn-sm" data-fire="${r.id}">Dar de baja</button>` : ''}
           </td>
         </tr>`).join('');
-      tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
-      tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
-      tb.querySelectorAll('[data-fire]').forEach(b => b.addEventListener('click', () => showLiquidacion(Number(b.dataset.fire))));
+    tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
+    tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
+    tb.querySelectorAll('[data-fire]').forEach(b => b.addEventListener('click', () => showLiquidacion(Number(b.dataset.fire))));
+    const bar = $('emp-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('emp-page-info').textContent = `Página ${empPage} de ${pages} · ${rows.length} registro(s)`;
+    $('emp-prev').disabled = empPage <= 1;
+    $('emp-next').disabled = empPage >= pages;
+  }
+
+  /* ============ Inactivos ============ */
+  let inactivePage = 1;
+  let inactiveAllRows = [];
+  const INACTIVE_PAGE_SIZE = 10;
+
+  async function loadInactiveEmployees() {
+    const search = $('search-inactive').value;
+    try {
+      const res = await window.api.listEmployees(search, 'inactivo');
+      if (!res.ok) throw new Error(res.error);
+      inactiveAllRows = res.data;
+      inactivePage = 1;
+      renderInactivePage();
       loadStats();
     } catch (e) {
       toast(e.message, 'error');
     }
   }
 
-  /* ============ Inactivos ============ */
-  async function loadInactiveEmployees() {
-    const search = $('search-inactive').value;
-    try {
-      const res = await window.api.listEmployees(search, 'inactivo');
-      if (!res.ok) throw new Error(res.error);
-      const rows = res.data;
-      $('inactive-count').textContent = rows.length + ' registro(s)';
-      $('inactive-empty').classList.toggle('hidden', rows.length > 0);
-      const tb = $('inactive-tbody');
-      tb.innerHTML = rows.map(r => `
+  function renderInactivePage() {
+    const rows = inactiveAllRows;
+    const pages = Math.max(1, Math.ceil(rows.length / INACTIVE_PAGE_SIZE));
+    if (inactivePage > pages) inactivePage = pages;
+    const start = (inactivePage - 1) * INACTIVE_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + INACTIVE_PAGE_SIZE);
+    $('inactive-count').textContent = rows.length + ' registro(s)';
+    $('inactive-empty').classList.toggle('hidden', rows.length > 0);
+    const tb = $('inactive-tbody');
+    tb.innerHTML = pageRows.map(r => `
         <tr>
           <td><strong>${esc(r.cedula || '—')}</strong></td>
           <td>${esc(r.nombres)} ${esc(r.apellidos)}</td>
@@ -708,13 +664,14 @@
             ${canEdit() ? `<button class="btn btn-primary btn-sm" data-reactivate="${r.id}">Reactivar</button>` : ''}
           </td>
         </tr>`).join('');
-      tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
-      tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
-      tb.querySelectorAll('[data-reactivate]').forEach(b => b.addEventListener('click', () => showReintegrar(Number(b.dataset.reactivate))));
-      loadStats();
-    } catch (e) {
-      toast(e.message, 'error');
-    }
+    tb.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openEmployee(Number(b.dataset.open))));
+    tb.querySelectorAll('[data-finiquito]').forEach(b => b.addEventListener('click', () => showFiniquito(Number(b.dataset.finiquito))));
+    tb.querySelectorAll('[data-reactivate]').forEach(b => b.addEventListener('click', () => showReintegrar(Number(b.dataset.reactivate))));
+    const bar = $('inactive-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('inactive-page-info').textContent = `Página ${inactivePage} de ${pages} · ${rows.length} registro(s)`;
+    $('inactive-prev').disabled = inactivePage <= 1;
+    $('inactive-next').disabled = inactivePage >= pages;
   }
 
   /* ============ Estadísticas ============ */
@@ -1244,6 +1201,42 @@
         ['Total retenciones', fmtRD(t.retenciones), ''],
         ['2da quincena (neto)', fmtRD(t.quincena2_neto), ''],
         ['Total neto', fmtRD(t.neto), ' stat-net']
+      ],
+      tables: [
+        {
+          id: 'q1',
+          title: 'Primera quincena',
+          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Deducciones', 'Neto a pagar'],
+          cols: (r) => [
+            C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
+            C('money', r.salario_mitad), C('money', r.dm_q1), C('money', r.quincena1, true)
+          ],
+          totCols: (t) => [
+            C('texto', ''), C('texto', ''), C('texto', 'Totales'),
+            C('money', t.salario_mitad_total), C('money', t.dm_q1_total), C('money', t.quincena1, true)
+          ]
+        },
+        {
+          id: 'q2',
+          title: 'Segunda quincena',
+          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
+          cols: (r) => [
+            C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
+            C('money', r.salario_mitad), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+            C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
+            C('money', r.dm_q2),
+            C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
+            C('money', r.quincena2_neto, true)
+          ],
+          totCols: (t) => [
+            C('texto', ''), C('texto', ''), C('texto', 'Totales'),
+            C('money', t.salario_mitad_total), C('texto', ''), C('texto', ''), C('texto', ''),
+            C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
+            C('money', t.dm_q2_total),
+            C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
+            C('money', t.quincena2_neto, true)
+          ]
+        }
       ]
     },
     semanal: {
@@ -1327,24 +1320,58 @@
       const data = res.data;
       lastNominaData = { vista, data };
       $('nomina-empty').classList.toggle('hidden', data.rows.length > 0);
-      $('nomina-thead').innerHTML = `<tr>${def.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
-      const tb = $('nomina-tbody');
-      tb.innerHTML = data.rows.length ? data.rows.map(r =>
-        `<tr>${def.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
-      tb.querySelectorAll('[data-he]').forEach(b => b.addEventListener('click', () => {
-        $('nomina-emp').value = b.dataset.he;
-        loadNomina();
-      }));
+      if (def.tables && def.tables.length) {
+        renderNominaTables(def.tables, data, empId);
+      } else {
+        renderNominaSingleTable(def, data, empId);
+      }
       const t = data.totales;
-      $('nomina-tfoot').innerHTML = data.rows.length
-        ? `<tr>${def.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
-        : '';
       const cards = def.cards(t, data.rows.length);
       $('nomina-totals').innerHTML = cards.map(([l, v, cls]) =>
         `<div class="card stat-card"><div class="stat-label">${esc(l)}</div><div class="stat-value${cls}">${esc(v)}</div></div>`).join('');
     } catch (e) {
       toast(e.message, 'error');
     }
+  }
+
+  function renderNominaSingleTable(def, data, empId) {
+    $('nomina-table').classList.remove('hidden');
+    $('nomina-quincenas').classList.add('hidden');
+    $('nomina-thead').innerHTML = `<tr>${def.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
+    const tb = $('nomina-tbody');
+    tb.innerHTML = data.rows.length ? data.rows.map(r =>
+      `<tr>${def.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
+    bindNominaExtras(tb, data);
+    const t = data.totales;
+    $('nomina-tfoot').innerHTML = data.rows.length
+      ? `<tr>${def.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
+      : '';
+  }
+
+  function renderNominaTables(tables, data, empId) {
+    $('nomina-table').classList.add('hidden');
+    $('nomina-quincenas').classList.remove('hidden');
+    const t = data.totales;
+    for (const table of tables) {
+      const tbody = $(`nomina-${table.id}-tbody`);
+      const thead = $(`nomina-${table.id}-thead`);
+      const tfoot = $(`nomina-${table.id}-tfoot`);
+      if (!tbody) continue;
+      thead.innerHTML = `<tr>${table.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
+      tbody.innerHTML = data.rows.length ? data.rows.map(r =>
+        `<tr>${table.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
+      bindNominaExtras(tbody, data);
+      tfoot.innerHTML = data.rows.length
+        ? `<tr>${table.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
+        : '';
+    }
+  }
+
+  function bindNominaExtras(tbody, data) {
+    tbody.querySelectorAll('[data-he]').forEach(b => b.addEventListener('click', () => {
+      $('nomina-emp').value = b.dataset.he;
+      loadNomina();
+    }));
   }
 
   async function saveHorasExtra() {
@@ -1766,6 +1793,9 @@
   let lastReport = null;
   let lastReportTitle = '';
   let lastReportKind = '';
+  let repPageRows = [];
+  let repPage = 1;
+  const REP_PAGE_SIZE = 15;
   function initReportes() {
     const sel = $('rep-mes');
     if (sel.options.length === 0) {
@@ -1783,14 +1813,44 @@
     lastReport = { headers, rows };
     lastReportTitle = title;
     lastReportKind = kind || '';
-    const box = $('report-content');
-    box.innerHTML = `
+    repPageRows = rows;
+    repPage = 1;
+    $('report-content').innerHTML = `
       <h3>${esc(title)}</h3>
       <table class="table">
         <thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('')
-          : `<tr><td colspan="${headers.length}" class="muted center">${esc(emptyMsg)}</td></tr>`}</tbody>
-      </table>`;
+        <tbody id="report-tbody"></tbody>
+      </table>
+      <div class="pagination hidden" id="report-pagination">
+        <button class="btn btn-ghost" id="report-prev">← Anterior</button>
+        <span id="report-page-info" class="pagination-info">Página 1 de 1</span>
+        <button class="btn btn-ghost" id="report-next">→ Siguiente</button>
+      </div>`;
+    bindReportPager();
+    renderReportPage(emptyMsg);
+  }
+
+  function renderReportPage(emptyMsg) {
+    const rows = repPageRows;
+    const pages = Math.max(1, Math.ceil(rows.length / REP_PAGE_SIZE));
+    if (repPage > pages) repPage = pages;
+    const start = (repPage - 1) * REP_PAGE_SIZE;
+    const pageRows = rows.slice(start, start + REP_PAGE_SIZE);
+    $('report-tbody').innerHTML = pageRows.length
+      ? pageRows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${lastReport.headers.length}" class="muted center">${esc(emptyMsg)}</td></tr>`;
+    const bar = $('report-pagination');
+    if (bar) bar.classList.toggle('hidden', rows.length === 0);
+    $('report-page-info').textContent = `Página ${repPage} de ${pages} · ${rows.length} registro(s)`;
+    $('report-prev').disabled = repPage <= 1;
+    $('report-next').disabled = repPage >= pages;
+  }
+
+  function bindReportPager() {
+    const prev = $('report-prev');
+    const next = $('report-next');
+    if (prev) prev.addEventListener('click', () => { if (repPage > 1) { repPage--; renderReportPage(); } });
+    if (next) next.addEventListener('click', () => { if (repPage < Math.ceil(repPageRows.length / REP_PAGE_SIZE)) { repPage++; renderReportPage(); } });
   }
 
   async function loadReportPlantilla() {
@@ -1831,6 +1891,76 @@
       renderReport('Empleados por departamento', ['Departamento', 'Cantidad'],
         (res.data || []).map(d => [d.departamento, d.cantidad]),
         'Sin datos.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportNominaDepartamentos() {
+    try {
+      const res = await window.api.reporteNominaDepartamentos();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(d => [d.departamento, d.empleados, fmtRD(d.total_salario), d.mensual || 0, d.quincenal || 0, d.semanal || 0]);
+      if (rows.length) {
+        const tot = res.data.reduce((s, d) => s + Number(d.total_salario), 0);
+        const emp = res.data.reduce((s, d) => s + Number(d.empleados), 0);
+        rows.push(['TOTALES', emp, fmtRD(tot), '', '', '']);
+      }
+      renderReport('Costo de nómina por departamento', ['Departamento', 'Empleados', 'Nómina mensual', 'Mensual', 'Quincenal', 'Semanal'],
+        rows, 'No hay empleados activos con salario.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportEmpleados() {
+    try {
+      const res = await window.api.reporteEmpleados();
+      if (!res.ok) throw new Error(res.error);
+      renderReport('Informe de empleados activos', ['Cédula', 'Nombre', 'Puesto', 'Departamento', 'Salario', 'Tipo', 'Ingreso', 'Contrato', 'ARS', 'AFP'],
+        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.puesto, r.departamento, fmtRD(r.salario), r.tipo_salario, r.fecha_ingreso, CONTRATO_LABEL[r.tipo_contrato] || r.tipo_contrato || '', r.ars, r.afp]),
+        'No hay empleados activos.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportCedulasVencer() {
+    try {
+      const res = await window.api.reporteCedulasVencer();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(r => {
+        let estado = '—';
+        if (r.fecha_vencimiento) {
+          const p = r.fecha_vencimiento.split('/');
+          const d = p.length === 3 ? new Date(+p[2], +p[1] - 1, +p[0]) : null;
+          const diff = d ? Math.ceil((d - new Date()) / 86400000) : null;
+          estado = diff == null ? '—' : diff < 0 ? 'Vencida' : diff <= 90 ? `Vence en ${diff} días` : 'Vigente';
+        }
+        return [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_vencimiento, estado, r.puesto, r.departamento];
+      });
+      renderReport('Cédulas por vencer', ['Cédula', 'Nombre', 'Vencimiento', 'Estado', 'Puesto', 'Departamento'],
+        rows, 'Sin cédulas con vencimiento registrado.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportAniversarios() {
+    const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    try {
+      const res = await window.api.reporteAniversarios(anio);
+      if (!res.ok) throw new Error(res.error);
+      renderReport('Aniversarios laborales ' + anio, ['Cédula', 'Nombre', 'Fecha de ingreso', 'Años', 'Puesto', 'Departamento'],
+        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_ingreso, r.anios, r.puesto, r.departamento]),
+        'Sin aniversarios calculados para ' + anio + '.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function loadReportBeneficios() {
+    try {
+      const res = await window.api.reporteBeneficios();
+      if (!res.ok) throw new Error(res.error);
+      const rows = (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.ars || '—', r.afp || '—', r.nss || '—', r.puesto, r.departamento]);
+      if (rows.length) {
+        const arsCount = (res.data || []).filter(r => r.ars).length;
+        const afpCount = (res.data || []).filter(r => r.afp).length;
+        rows.push(['TOTALES', rows.length, `${arsCount} con ARS`, `${afpCount} con AFP`, '', '', '']);
+      }
+      renderReport('Informe de beneficios (ARS / AFP / NSS)', ['Cédula', 'Nombre', 'ARS', 'AFP', 'NSS', 'Puesto', 'Departamento'],
+        rows, 'No hay empleados activos.');
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -1875,6 +2005,50 @@
     }]);
   }
 
+  function buildReportHtml() {
+    if (!lastReport || !lastReport.rows.length) {
+      toast('Genere primero un reporte', 'error');
+      return null;
+    }
+    const rowsHtml = lastReport.rows.map(r => `<tr>${r.map(c => `<td>${esc(c == null ? '' : c)}</td>`).join('')}</tr>`).join('');
+    return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+      <title>${esc(lastReportTitle || 'Reporte')}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 24px; color: #1a2030; }
+        h2 { margin: 0 0 4px; }
+        .sub { color: #6b7280; font-size: 12px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #1e3a8a; color: #fff; text-align: left; padding: 8px; }
+        td { border: 1px solid #d1d5db; padding: 6px 8px; }
+        tr:nth-child(even) td { background: #f3f4f6; }
+      </style></head><body>
+      <h2>${esc(lastReportTitle || 'Reporte')}</h2>
+      <div class="sub">Generado el ${new Date().toLocaleString('es-DO')}</div>
+      <table><thead><tr>${lastReport.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </body></html>`;
+  }
+
+  async function printReport() {
+    const html = buildReportHtml();
+    if (!html) return;
+    try {
+      const res = await window.api.reportePrint(lastReportTitle, html);
+      if (!res.ok) throw new Error(res.error);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function exportReportPdf() {
+    const html = buildReportHtml();
+    if (!html) return;
+    try {
+      const res = await window.api.reportePdf(lastReportTitle, html);
+      if (!res.ok) throw new Error(res.error);
+      if (res.data) toast('PDF guardado: ' + res.data, 'success', 5000);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   /* ============ Notificaciones ============ */
   const NOTIF_TIPOS = [
     ['pago', '💰 Pagos de nómina'],
@@ -1904,12 +2078,14 @@
     $('notif-totals').innerHTML = cards.map(([l, v, cls]) =>
       `<div class="card stat-card"><div class="stat-label">${esc(l)}</div><div class="stat-value${cls}">${v}</div></div>`).join('');
     const box = $('notif-list');
-    if (!events.length) {
+    const descartadas = new Set(getNotifDismissed());
+    const visibles = events.filter(e => !descartadas.has(e.id));
+    if (!visibles.length) {
       box.innerHTML = '<h3 style="padding:16px 20px 0">Alertas</h3><div class="empty-state"><p>No hay alertas en los próximos días.</p></div>';
       return;
     }
     box.innerHTML = '<h3 style="padding:16px 20px 0">Alertas</h3>' + NOTIF_TIPOS.map(([t, label]) => {
-      const group = events.filter(e => e.tipo === t);
+      const group = visibles.filter(e => e.tipo === t);
       if (!group.length) return '';
       return `<h4 class="notif-group">${label} <span>(${group.length})</span></h4>` + group.map(e => {
         const badge = e.dias < 0 ? '<span class="badge-warn">Vencida</span>'
@@ -1918,9 +2094,20 @@
         return `<div class="notif-item">
           <div class="notif-item-main"><strong>${esc(e.titulo)}</strong><div class="muted small">${esc(e.descripcion)}</div></div>
           <div class="notif-item-date"><span>${esc(e.fecha)}</span> ${badge}</div>
+          <button class="notif-dismiss" data-dismiss-id="${esc(e.id)}" title="Descartar alerta">✕</button>
         </div>`;
       }).join('');
     }).join('');
+  }
+
+  function getNotifDismissed() {
+    try { return JSON.parse(localStorage.getItem('notif_dismissed') || '[]'); } catch (e) { return []; }
+  }
+  function dismissNotif(id) {
+    const set = new Set(getNotifDismissed());
+    set.add(id);
+    localStorage.setItem('notif_dismissed', JSON.stringify([...set]));
+    loadNotificaciones();
   }
 
   async function loadNotificaciones() {
@@ -2138,6 +2325,17 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function resetSalarioHistorial() {
+    const ok = confirm('¿Reiniciar el historial de salarios?\n\nBorra todos los cambios de salario registrados y deja el salario actual de cada empleado activo como base desde el 1 de enero del año.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    try {
+      const res = await window.api.resetSalarioHistorial();
+      if (!res.ok) throw new Error(res.error);
+      const data = res.data || {};
+      toast(`Historial reiniciado: base aplicada a ${data.registros || 0} empleados activos (año ${data.anio || ''}).`, 'success', 6000);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   function fmtSize(bytes) {
     if (bytes == null) return '';
     const kb = bytes / 1024;
@@ -2258,21 +2456,10 @@
 
   /* ============ Correos ============ */
   let mailEmployees = [];
-  let mailFiles = [];
   let mailContacts = [];
   async function loadCorreo() {
     try {
-      const [cfg, emps, contacts] = await Promise.all([window.api.getCorreoSettings(), window.api.listEmployees('', 'activo'), window.api.contactosList()]);
-      if (cfg.ok && cfg.data) {
-        $('smtp-host').value = cfg.data.smtp_host || '';
-        $('smtp-port').value = cfg.data.smtp_port || '';
-        $('smtp-secure').value = String(cfg.data.smtp_secure || 'false');
-        $('smtp-user').value = cfg.data.smtp_user || '';
-        $('smtp-pass').value = cfg.data.smtp_pass || '';
-        $('smtp-from-name').value = cfg.data.smtp_from_name || '';
-        $('smtp-from-email').value = cfg.data.smtp_from_email || '';
-        $('smtp-test-to').value = cfg.data.smtp_test_to || '';
-      }
+      const [emps, contacts] = await Promise.all([window.api.listEmployees('', 'activo'), window.api.contactosList()]);
       if (emps.ok) {
         mailEmployees = (emps.data || []).filter(e => (e.email || '').trim());
       }
@@ -2287,17 +2474,6 @@
         $('ai-openai-key').value = ai.data.openai || '';
       }
     } catch (e) { /* sin permisos */ }
-    const ms = $('mail-mes');
-    if (ms.options.length === 0) {
-      const now = new Date().getMonth();
-      ms.innerHTML = MESES_ES.map((m, i) => `<option value="${i + 1}" ${i === now ? 'selected' : ''}>${m}</option>`).join('');
-    }
-    const anio = $('mail-anio');
-    if (anio.options.length === 0) {
-      const y = new Date().getFullYear();
-      anio.innerHTML = [y - 1, y, y + 1].map(v => `<option value="${v}">${v}</option>`).join('');
-      anio.value = String(y);
-    }
     renderMailRecipients();
     renderMailContacts();
   }
@@ -2371,23 +2547,6 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  async function saveCorreoSettings() {
-    try {
-      const res = await window.api.saveCorreoSettings({
-        smtp_host: $('smtp-host').value.trim(),
-        smtp_port: $('smtp-port').value.trim(),
-        smtp_secure: $('smtp-secure').value,
-        smtp_user: $('smtp-user').value.trim(),
-        smtp_pass: $('smtp-pass').value,
-        smtp_from_name: $('smtp-from-name').value.trim(),
-        smtp_from_email: $('smtp-from-email').value.trim(),
-        smtp_test_to: $('smtp-test-to').value.trim()
-      });
-      if (!res.ok) throw new Error(res.error);
-      toast('Configuración SMTP guardada', 'success');
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
   async function saveAiSettings() {
     try {
       const res = await window.api.saveAiSettings({
@@ -2403,44 +2562,59 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  async function testCorreo() {
-    try {
-      const res = await window.api.testCorreo();
-      if (!res.ok) throw new Error(res.error);
-      toast('Correo de prueba enviado a ' + res.data.to, 'success', 5000);
-    } catch (e) { toast(e.message, 'error'); }
+  function fillTemplate(text, e) {
+    return String(text || '')
+      .replace(/\{nombre\}/g, e.nombres || '')
+      .replace(/\{apellidos\}/g, e.apellidos || '')
+      .replace(/\{puesto\}/g, e.puesto || '')
+      .replace(/\{departamento\}/g, e.departamento || '');
+  }
+
+  function openMailtoFor(to, subject, body, cc) {
+    return window.api.openMailto(to, subject, body, cc);
+  }
+
+  function selectedMailEmployees() {
+    const ids = selectedMailIds();
+    return mailEmployees.filter(e => ids.includes(e.id));
   }
 
   async function sendSelectedMail() {
-    const ids = selectedMailIds();
-    if (!ids.length) { toast('Seleccione al menos un destinatario', 'error'); return; }
-    const mes = Number($('mail-mes').value) || new Date().getMonth() + 1;
-    const anio = Number($('mail-anio').value) || new Date().getFullYear();
-    const vista = $('mail-nomina-tipo').value || 'mensual';
-    const attachCedula = $('mail-attach-cedula').checked;
-    const attachNomina = $('mail-attach-nomina').checked;
-    if (!attachCedula && !attachNomina) { toast('Marque al menos un adjunto (cédula o nómina)', 'error'); return; }
+    const emps = selectedMailEmployees();
+    if (!emps.length) { toast('Seleccione al menos un destinatario', 'error'); return; }
+    const subject = $('mail-subject').value.trim();
+    const body = $('mail-message').value;
+    const cc = selectedContactEmails().join(', ');
     try {
-      let total = 0;
-      if (attachCedula) {
-        const r = await window.api.sendCedulas(ids);
-        if (!r.ok) throw new Error(r.error);
-        total += r.data.sent;
+      let opened = 0;
+      for (const e of emps) {
+        await openMailtoFor(e.email, fillTemplate(subject, e) || `Comunicado para ${e.nombres} ${e.apellidos}`, fillTemplate(body, e), cc);
+        opened++;
       }
-      if (attachNomina) {
-        const r = await window.api.sendNomina(mes, anio, ids, vista);
-        if (!r.ok) throw new Error(r.error);
-        total += r.data.sent;
-      }
-      toast(total + ' correo(s) enviado(s)', 'success', 5000);
+      toast(opened + ' correo(s) abierto(s) en tu app de correo', 'success', 5000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function sendMailReminders() {
     try {
-      const res = await window.api.sendReminders();
+      const res = await window.api.listNotificaciones();
       if (!res.ok) throw new Error(res.error);
-      toast(res.data.sent + ' recordatorio(s) enviado(s)', 'success', 5000);
+      const events = res.data && res.data.events ? res.data.events : (Array.isArray(res.data) ? res.data : []);
+      const emps = mailEmployees.filter(e => e.id != null && e.email);
+      let opened = 0;
+      for (const e of emps) {
+        const full = (e.nombres + ' ' + e.apellidos).toLowerCase();
+        const mine = events.filter(ev =>
+          ev.titulo && ev.titulo.toLowerCase().includes(full)
+        );
+        if (!mine.length) continue;
+        const subject = 'Recordatorios pendientes — ' + e.nombres + ' ' + e.apellidos;
+        const items = mine.map(ev => '• ' + (ev.titulo || ev.descripcion || ''));
+        const body = `Estimado/a ${e.nombres}:\n\nLe recordamos lo siguiente en relación con su expediente:\n\n${items.join('\n')}\n\nReciba un cordial saludo.\nAtentamente,\nRecursos Humanos`;
+        await openMailtoFor(e.email, subject, body);
+        opened++;
+      }
+      toast(opened ? opened + ' recordatorio(s) generado(s) en tu app de correo' : 'No hay recordatorios pendientes para empleados con correo', opened ? 'success' : 'info', 5000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -2456,70 +2630,34 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  function b64FromArrayBuffer(buf) {
-    const bytes = new Uint8Array(buf);
-    let bin = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(bin);
-  }
-
-  function fmtBytes(n) {
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-    return (n / 1048576).toFixed(1) + ' MB';
-  }
-
-  function renderMailFiles() {
-    const ul = $('mail-files-list');
-    ul.innerHTML = mailFiles.map((f, i) => `
-      <li><span>📎 ${esc(f.name)} <span class="muted">(${fmtBytes(f.size)})</span></span>
-        <button type="button" class="btn btn-danger btn-sm" data-rm="${i}">Quitar</button></li>`).join('');
-    ul.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => {
-      mailFiles.splice(Number(b.dataset.rm), 1);
-      renderMailFiles();
-    }));
-  }
-
-  async function addMailFiles() {
-    const input = $('mail-files');
-    for (const f of input.files) {
-      if (mailFiles.some(x => x.name === f.name && x.size === f.size)) continue;
-      mailFiles.push({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', data: b64FromArrayBuffer(await f.arrayBuffer()) });
-    }
-    input.value = '';
-    renderMailFiles();
-    updateCustomCount();
-  }
-
   function updateCustomCount() {
     const extra = selectedContactEmails().length;
     $('mail-custom-count').textContent = (selectedMailIds().length ? selectedMailIds().length + ' empleado(s)' : 'Sin empleados') +
-      (extra ? ' + ' + extra + ' contacto(s)' : '') +
-      (mailFiles.length ? ' · ' + mailFiles.length + ' archivo(s)' : '');
+      (extra ? ' + ' + extra + ' contacto(s) en CC' : '');
   }
 
-  async function sendCustomMail() {
+  async function openComposedMail() {
     const subject = $('mail-subject').value.trim();
-    if (!subject) { toast('Indique el asunto del correo', 'error'); return; }
-    const extraTo = [$('mail-to-extra').value.trim(), ...selectedContactEmails()].filter(Boolean).join(', ');
+    const body = $('mail-message').value;
+    if (!subject && !body) { toast('Redacte un asunto o mensaje antes de abrir el correo', 'info'); return; }
+    const emps = selectedMailEmployees();
+    const extraTo = [$('mail-to-extra').value.trim(), ...selectedContactEmails()].filter(Boolean);
+    const cc = extraTo.join(', ');
     try {
-      const res = await window.api.sendCorreoCustom({
-        employeeIds: selectedMailIds(),
-        to: extraTo,
-        subject,
-        text: $('mail-message').value,
-        attachments: mailFiles.map(f => ({ filename: f.name, contentType: f.type, content: f.data }))
-      });
-      if (!res.ok) throw new Error(res.error);
-      toast(res.data.sent + ' correo(s) enviado(s)', 'success', 5000);
-      $('mail-message').value = '';
-      $('mail-subject').value = '';
-      mailFiles = [];
-      renderMailFiles();
-      updateCustomCount();
+      let opened = 0;
+      if (emps.length) {
+        for (const e of emps) {
+          await openMailtoFor(e.email, fillTemplate(subject, e), fillTemplate(body, e), cc);
+          opened++;
+        }
+      } else if (extraTo.length) {
+        await openMailtoFor(extraTo.join(','), subject, body);
+        opened = 1;
+      } else {
+        toast('Indique un destinatario (empleado, correo o contacto en CC)', 'error');
+        return;
+      }
+      toast(opened + ' correo(s) abierto(s) en tu app de correo', 'success', 4000);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -2758,6 +2896,7 @@
     if (!modalRecord) return;
     const editing = !!editId;
     const readonly = !canEdit();
+    setModalTab('identificacion');
     $('employee-modal-title').textContent = editing ? 'Expediente #' + editId : 'Nuevo expediente';
     $('btn-save-employee').textContent = editing ? 'Guardar cambios' : 'Guardar expediente';
     $('btn-save-employee').disabled = readonly;
@@ -2802,6 +2941,31 @@
     $('employee-modal').classList.add('hidden');
     editId = null;
     modalRecord = null;
+    closeCedulaLightbox();
+  }
+
+  function setModalTab(name) {
+    document.querySelectorAll('#employee-modal .modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('#employee-modal .tab-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+  }
+
+  function showCedulaAmpliada(side) {
+    const lb = $('cedula-lightbox');
+    const img = $('lightbox-img');
+    if (!lb || !img) return;
+    const src = modalRecord && (side === 'frente' ? modalRecord.frente : modalRecord.reverso);
+    const title = side === 'frente' ? 'Cédula — Frente' : 'Cédula — Reverso';
+    if (!src) { toast('No hay imagen de ' + (side === 'frente' ? 'frente' : 'reverso') + ' para mostrar.', 'info'); return; }
+    $('lightbox-title').textContent = title;
+    img.src = src;
+    lb.classList.remove('hidden');
+  }
+
+  function closeCedulaLightbox() {
+    const lb = $('cedula-lightbox');
+    const img = $('lightbox-img');
+    if (lb) lb.classList.add('hidden');
+    if (img) img.src = '';
   }
 
   function setLoading(on, text) {
@@ -2984,17 +3148,11 @@
     $('server-modal-close').addEventListener('click', closeServerConfig);
     $('btn-server-cancel').addEventListener('click', closeServerConfig);
     $('server-modal').addEventListener('click', (e) => { if (e.target === $('server-modal')) closeServerConfig(); });
-    $('btn-server-test').addEventListener('click', testServerConnection);
     $('btn-cloud-test').addEventListener('click', testCloudConnection);
     $('btn-cloud-login').addEventListener('click', connectCloud);
     ['cloud-url', 'cloud-user', 'cloud-pass'].forEach((id) =>
       $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') connectCloud(); }));
     $('btn-server-save').addEventListener('click', saveServerConfig);
-    $('btn-discover').addEventListener('click', discoverServers);
-    $('btn-connect-name').addEventListener('click', connectByName);
-    $('btn-gen-token').addEventListener('click', () => { $('server-token-gen').value = randomToken(); });
-    $('server-advanced-toggle').addEventListener('click', () => setAdvanced($('server-advanced').classList.contains('hidden')));
-    $('btn-firewall-fix').addEventListener('click', firewallFixFromModal);
     document.querySelectorAll('#conn-mode-cards .mode-card').forEach((card) =>
       card.addEventListener('click', () => setConnMode(card.dataset.mode)));
     document.querySelectorAll('#wizard-mode-cards .mode-card').forEach((card) =>
@@ -3044,10 +3202,24 @@
       searchTimer = setTimeout(loadEmployees, 300);
     });
 
+    $('emp-prev').addEventListener('click', () => {
+      if (empPage > 1) { empPage--; renderEmployeesPage(); }
+    });
+    $('emp-next').addEventListener('click', () => {
+      if (empPage < Math.ceil(empAllRows.length / EMP_PAGE_SIZE)) { empPage++; renderEmployeesPage(); }
+    });
+
     let searchInactiveTimer = null;
     $('search-inactive').addEventListener('input', () => {
       clearTimeout(searchInactiveTimer);
       searchInactiveTimer = setTimeout(loadInactiveEmployees, 300);
+    });
+
+    $('inactive-prev').addEventListener('click', () => {
+      if (inactivePage > 1) { inactivePage--; renderInactivePage(); }
+    });
+    $('inactive-next').addEventListener('click', () => {
+      if (inactivePage < Math.ceil(inactiveAllRows.length / INACTIVE_PAGE_SIZE)) { inactivePage++; renderInactivePage(); }
     });
 
     $('btn-new-employee').addEventListener('click', () => {
@@ -3056,6 +3228,8 @@
       modalRecord = emptyRecord();
       showEmployeeModal();
     });
+
+    $('btn-open-empleados').addEventListener('click', () => go('empleados'));
 
     $('btn-export-cedulas-pdf').addEventListener('click', exportCedulasPdf);
     $('btn-export-cedula-pdf').addEventListener('click', exportCedulaPdf);
@@ -3089,6 +3263,25 @@
     });
 
     $('btn-swap-sides').addEventListener('click', swapSides);
+
+    document.querySelectorAll('#employee-modal .modal-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        setModalTab(tab.dataset.tab);
+        tab.scrollIntoView({ block: 'nearest' });
+      });
+    });
+
+    document.querySelectorAll('.btn-view-full').forEach(btn => {
+      if (btn) btn.addEventListener('click', () => showCedulaAmpliada(btn.getAttribute('data-side')));
+    });
+    const _lightboxClose = $('lightbox-close');
+    if (_lightboxClose) _lightboxClose.addEventListener('click', closeCedulaLightbox);
+    const _lightboxCloseBtn = $('lightbox-close-btn');
+    if (_lightboxCloseBtn) _lightboxCloseBtn.addEventListener('click', closeCedulaLightbox);
+    const _lightbox = $('cedula-lightbox');
+    if (_lightbox) _lightbox.addEventListener('click', (e) => {
+      if (e.target === $('cedula-lightbox')) closeCedulaLightbox();
+    });
 
     $('btn-reprocess').addEventListener('click', async () => {
       if (!lastFrontFile) return;
@@ -3167,9 +3360,17 @@
     $('btn-rep-cumpleanos').addEventListener('click', loadReportCumpleanos);
     $('btn-rep-deptos').addEventListener('click', loadReportDepartamentos);
     $('btn-rep-609').addEventListener('click', loadReport609);
+    $('btn-rep-nomina-deptos').addEventListener('click', loadReportNominaDepartamentos);
+    $('btn-rep-empleados').addEventListener('click', loadReportEmpleados);
+    $('btn-rep-cedulas').addEventListener('click', loadReportCedulasVencer);
+    $('btn-rep-aniversarios').addEventListener('click', loadReportAniversarios);
+    $('btn-rep-beneficios').addEventListener('click', loadReportBeneficios);
     $('btn-rep-csv').addEventListener('click', exportReportExcel);
+    $('btn-rep-imprimir').addEventListener('click', printReport);
+    $('btn-rep-pdf').addEventListener('click', exportReportPdf);
 
     $('btn-backup-create').addEventListener('click', createBackup);
+    $('btn-salarios-reset').addEventListener('click', resetSalarioHistorial);
     $('btn-backup-save-settings').addEventListener('click', saveBackupSettings);
     $('btn-backup-dir').addEventListener('click', pickBackupDir);
     $('btn-backup-restore-file').addEventListener('click', restoreBackupFile);
@@ -3181,16 +3382,16 @@
     $('btn-notif-test').addEventListener('click', testNotificacion);
     $('btn-notif-refresh').addEventListener('click', () => { loadNotificaciones(); loadNotifSettings(); });
     $('btn-notif-save').addEventListener('click', saveNotifSettings);
+    $('notif-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('.notif-dismiss');
+      if (btn) dismissNotif(btn.dataset.dismissId);
+    });
 
-    $('btn-mail-save').addEventListener('click', saveCorreoSettings);
-    $('btn-mail-test').addEventListener('click', testCorreo);
     $('btn-ai-save').addEventListener('click', saveAiSettings);
     $('btn-mail-send').addEventListener('click', sendSelectedMail);
     $('btn-mail-reminders').addEventListener('click', sendMailReminders);
     $('btn-mail-log').addEventListener('click', loadMailLog);
-    $('btn-mail-add-files').addEventListener('click', () => $('mail-files').click());
-    $('mail-files').addEventListener('change', addMailFiles);
-    $('btn-mail-send-custom').addEventListener('click', sendCustomMail);
+    $('btn-mail-open').addEventListener('click', openComposedMail);
     $('btn-contacto-add').addEventListener('click', addMailContact);
     $('contacto-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') addMailContact(); });
     $('mail-contacts').addEventListener('change', updateCustomCount);
