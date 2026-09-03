@@ -851,18 +851,15 @@ function registerIpc() {
 
   ipcMain.handle('reportes:print', wrap(async (e, { title = '', html = '' } = {}) => {
     requireAuth();
-    return new Promise((resolve, reject) => {
-      const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
-      win.webContents.on('did-finish-load', async () => {
-        try {
-          await win.webContents.print({ silent: false, printBackground: true });
-          resolve(true);
-        } catch (err) { reject(err); }
-        finally { win.close(); }
-      });
-      win.webContents.on('did-fail-load', () => { reject(new Error('No se pudo abrir la impresión')); win.close(); });
-      win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-    });
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    try {
+      const success = await win.webContents.print({ silent: false, printBackground: true });
+      if (!success) throw new Error('No se pudo completar la impresión (puede que no haya impresora o el diálogo se canceló).');
+      return true;
+    } finally {
+      win.destroy();
+    }
   }));
 
   ipcMain.handle('reportes:pdf', wrap(async (e, { title = '', html = '' } = {}) => {

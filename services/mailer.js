@@ -176,23 +176,23 @@ function buildNominaData(mes, anio, vista) {
 const NOMINA_MAIL_VIEWS = {
   mensual: {
     label: 'Mensual',
-    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto'],
-    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.bruto, r.afp, r.sfs, r.isr, r.retenciones, r.neto]
+    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto'],
+    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.bruto, r.afp, r.sfs, r.isr, r.retenciones, r.neto]
   },
   quincenal: {
     label: 'Quincenal',
-    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Deducciones', 'Quincena1', 'Quincena2Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Quincena2Neto', 'TotalNeto'],
-    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.deducciones_manuales, r.quincena1, r.quincena2_bruto, r.afp, r.sfs, r.isr, r.retenciones, r.quincena2_neto, r.total_neto]
+    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Feriados', 'PagoExtras', 'Otros', 'Vacaciones', 'Quincena1', 'Quincena2Bruto', 'Incentivo', 'Deducciones', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Quincena2Neto', 'TotalNeto'],
+    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.vacaciones_pago, r.quincena1, r.quincena2_bruto, r.incentivo, r.deducciones_manuales, r.afp, r.sfs, r.isr, r.retenciones, r.quincena2_neto, r.total_neto]
   },
   semanal: {
     label: 'Semanal',
-    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Sem1-3Neto', 'UltimaSemBruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'UltimaSemNeto', 'TotalNeto'],
-    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, Math.round((Number(r.semana_neto) || 0) * 3 * 100) / 100, r.ultima_bruto, r.afp, r.sfs, r.isr, r.retenciones, r.ultima_neto, r.total_neto]
+    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'HorasExtra', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Sem1-3Neto', 'UltimaSemBruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'UltimaSemNeto', 'TotalNeto'],
+    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.horas_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, Math.round((Number(r.semana_neto) || 0) * 3 * 100) / 100, r.ultima_bruto, r.afp, r.sfs, r.isr, r.retenciones, r.ultima_neto, r.total_neto]
   },
   diario: {
     label: 'Diario',
-    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'SalarioDiario', 'HorasExtra', 'Domingos', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto'],
-    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.salario_diario, r.horas_extra, r.domingos_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.bruto, r.afp, r.sfs, r.isr, r.retenciones, r.neto]
+    headers: ['Empleado', 'Cedula', 'Departamento', 'Salario', 'SalarioDiario', 'HorasExtra', 'Feriados', 'PagoExtras', 'Otros', 'Incentivo', 'Vacaciones', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto'],
+    row: (r) => [r.nombres + ' ' + r.apellidos, r.cedula, r.departamento, r.salario, r.salario_diario, r.horas_extra, r.feriados_extra, r.extra, r.otros_ingresos, r.incentivo, r.vacaciones_pago, r.bruto, r.afp, r.sfs, r.isr, r.retenciones, r.neto]
   }
 };
 

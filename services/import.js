@@ -46,13 +46,41 @@ function matchColumn(header) {
   return null;
 }
 
+function pad2(v) {
+  return String(v).padStart(2, '0');
+}
+
+function formatDateValue(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return `${pad2(v.getDate())}/${pad2(v.getMonth() + 1)}/${v.getFullYear()}`;
+  }
+  return null;
+}
+
+// Convierte un valor de celda (texto, número de serie de Excel o Date) en cadena,
+// con los fechas normalizadas a DD/MM/AAAA para no arrastrar el formato largo
+// tipo "Tue Jan 22 1963 19:00:00 GMT-0500".
 function cellText(cell) {
   if (!cell) return '';
+  const dateStr = formatDateValue(cell.value);
+  if (dateStr) return dateStr;
   if (cell.text != null && cell.text !== '') return String(cell.text);
   if (cell.value && typeof cell.value === 'object') {
+    if (cell.value.date instanceof Date) {
+      const d = formatDateValue(cell.value.date);
+      if (d) return d;
+    }
     if (cell.value.text != null) return String(cell.value.text);
     if (cell.value.result != null) return String(cell.value.result);
+    if (cell.value instanceof Date) {
+      const d = formatDateValue(cell.value);
+      if (d) return d;
+    }
     return '';
+  }
+  if (cell.value instanceof Date) {
+    const d = formatDateValue(cell.value);
+    if (d) return d;
   }
   return String(cell.value == null ? '' : cell.value);
 }
@@ -113,6 +141,20 @@ function normalizeTipoSalario(v) {
   return s || 'mensual';
 }
 
+function normalizeImportDate(raw) {
+  let t = String(raw == null ? '' : raw).trim();
+  if (!t) return t;
+  // Si llegó como el formato largo de JS Date ("Tue Jan 22 1963 19:00:00 GMT-0500").
+  const jsDate = new Date(t);
+  if (!isNaN(jsDate.getTime()) && /GMT|\(/i.test(t)) {
+    return `${pad2(jsDate.getDate())}/${pad2(jsDate.getMonth() + 1)}/${jsDate.getFullYear()}`;
+  }
+  // DD/MM/AAAA o D/M/AAAA ya correcto.
+  let m = t.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})$/);
+  if (m) return `${pad2(m[1])}/${pad2(m[2])}/${m[3]}`;
+  return t;
+}
+
 async function importEmployees(rows, userId, maxEmployees = 0) {
   const out = { imported: 0, skipped: 0, duplicated: [], errors: [] };
   const existing = db.employees.list();
@@ -142,6 +184,7 @@ async function importEmployees(rows, userId, maxEmployees = 0) {
         if (col.key === 'salario') v = Number(String(v).replace(/[^0-9.\-]/g, '')) || 0;
         if (col.key === 'sexo') v = normalizeSexo(v);
         if (col.key === 'tipo_salario') v = normalizeTipoSalario(v);
+        if (col.key === 'fecha_nacimiento' || col.key === 'fecha_ingreso') v = normalizeImportDate(v);
         data[col.key] = v;
       }
       const email = String(data.email || '').trim().toLowerCase();

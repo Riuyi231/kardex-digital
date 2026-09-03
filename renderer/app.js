@@ -1104,7 +1104,6 @@
         const hx = await window.api.getHorasExtra(empId, mes, anio);
         if (hx.ok) {
           $('he-horas').value = hx.data.horas_extra || 0;
-          $('he-domingos').value = hx.data.domingos_extra || 0;
           $('he-feriados').value = hx.data.feriados_extra || 0;
           $('he-otros').value = hx.data.otros_ingresos || 0;
           $('he-nota').value = hx.data.nota || '';
@@ -1136,17 +1135,17 @@
     mensual: {
       label: 'Mensual',
       fetch: (mes, anio, empId, depto) => window.api.calcularNomina(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
-        C('money', r.salario), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+        C('money', r.salario), C('num', r.horas_extra), C('num', r.feriados_extra),
         C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
         C('money', r.bruto), C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
         C('money', r.neto, true)
       ],
       totCols: (t) => [
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
-        C('money', t.salario), C('texto', ''), C('texto', ''), C('texto', ''),
+        C('money', t.salario), C('texto', ''), C('texto', ''),
         C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
         C('money', t.bruto), C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
         C('money', t.neto, true)
@@ -1154,7 +1153,7 @@
       cards: (t, count) => [
         ['Empleados', count, ''],
         ['Salario base', fmtRD(t.salario), ''],
-        ['Horas/domingos/feriados', fmtRD(t.extra), ''],
+        ['Horas/feriados extra', fmtRD(t.extra), ''],
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
@@ -1169,29 +1168,29 @@
     quincenal: {
       label: 'Quincenal',
       fetch: (mes, anio, empId, depto) => window.api.calcularNominaQuincenal(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones RD$', '1ra quincena', '2da quincena (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Feriados', 'Extras RD$', 'Otros RD$', 'Vacaciones RD$', '1ra quincena', '2da quincena (bruto)', 'Incentivo RD$', 'Deducciones RD$', 'AFP', 'SFS', 'ISR', 'Retenciones', '2da quincena (neto)', 'Total neto'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
-        C('money', r.salario), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
-        C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
-        C('money', r.deducciones_manuales),
+        C('money', r.salario), C('num', r.horas_extra), C('num', r.feriados_extra),
+        C('money', r.extra), C('money', r.otros_ingresos), C('money', r.vacaciones_pago),
         C('money', r.quincena1), C('money', r.quincena2_bruto),
+        C('money', r.incentivo), C('money', r.deducciones_manuales),
         C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
         C('money', r.quincena2_neto), C('money', r.total_neto, true)
       ],
       totCols: (t) => [
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
-        C('money', t.salario), C('texto', ''), C('texto', ''), C('texto', ''),
-        C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
-        C('money', t.deducciones_manuales),
+        C('money', t.salario), C('texto', ''), C('texto', ''),
+        C('money', t.extra), C('money', t.otros_ingresos), C('money', t.vacaciones),
         C('money', t.quincena1), C('money', t.quincena2_bruto),
+        C('money', t.incentivo), C('money', t.deducciones_manuales),
         C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
         C('money', t.quincena2_neto), C('money', t.neto, true)
       ],
       cards: (t, count) => [
         ['Empleados', count, ''],
         ['Salario base', fmtRD(t.salario), ''],
-        ['Horas/domingos/feriados', fmtRD(t.extra), ''],
+        ['Horas/feriados extra', fmtRD(t.extra), ''],
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
@@ -1219,10 +1218,10 @@
         {
           id: 'q2',
           title: 'Segunda quincena',
-          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
+          headers: ['Empleado', 'Cédula', 'Departamento', 'Salario (½)', 'Hrs. extra', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Deducciones', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
           cols: (r) => [
             C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
-            C('money', r.salario_mitad), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+            C('money', r.salario_mitad), C('num', r.horas_extra), C('num', r.feriados_extra),
             C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
             C('money', r.dm_q2),
             C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
@@ -1230,7 +1229,7 @@
           ],
           totCols: (t) => [
             C('texto', ''), C('texto', ''), C('texto', 'Totales'),
-            C('money', t.salario_mitad_total), C('texto', ''), C('texto', ''), C('texto', ''),
+            C('money', t.salario_mitad_total), C('texto', ''), C('texto', ''),
             C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
             C('money', t.dm_q2_total),
             C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
@@ -1242,10 +1241,10 @@
     semanal: {
       label: 'Semanal',
       fetch: (mes, anio, empId, depto) => window.api.calcularNominaSemanal(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Sem. 1-3 (neto)', 'Última sem. (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Última sem. (neto)', 'Total neto'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Hrs. extra', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Sem. 1-3 (neto)', 'Última sem. (bruto)', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Última sem. (neto)', 'Total neto'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
-        C('money', r.salario), C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+        C('money', r.salario), C('num', r.horas_extra), C('num', r.feriados_extra),
         C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
         C('money', Math.round((Number(r.semana_neto) || 0) * 3 * 100) / 100), C('money', r.ultima_bruto),
         C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
@@ -1253,7 +1252,7 @@
       ],
       totCols: (t) => [
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
-        C('money', t.salario), C('texto', ''), C('texto', ''), C('texto', ''),
+        C('money', t.salario), C('texto', ''), C('texto', ''),
         C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
         C('texto', ''), C('texto', ''),
         C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
@@ -1262,7 +1261,7 @@
       cards: (t, count) => [
         ['Empleados', count, ''],
         ['Salario base', fmtRD(t.salario), ''],
-        ['Horas/domingos/feriados', fmtRD(t.extra), ''],
+        ['Horas/feriados extra', fmtRD(t.extra), ''],
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
@@ -1277,11 +1276,11 @@
     diario: {
       label: 'Diario',
       fetch: (mes, anio, empId, depto) => window.api.calcularNominaDiaria(mes, anio, empId, depto),
-      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Salario diario', 'Hrs. extra', 'Domingos', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
+      headers: ['Empleado', 'Cédula', 'Departamento', 'Salario', 'Salario diario', 'Hrs. extra', 'Feriados', 'Extras RD$', 'Otros RD$', 'Incentivo RD$', 'Vacaciones RD$', 'Bruto', 'AFP', 'SFS', 'ISR', 'Retenciones', 'Neto a pagar'],
       cols: (r) => [
         C('texto', `${r.nombres} ${r.apellidos}`), C('texto', r.cedula || '—'), C('texto', r.departamento || ''),
         C('money', r.salario), C('money', r.salario_diario),
-        C('num', r.horas_extra), C('num', r.domingos_extra), C('num', r.feriados_extra),
+        C('num', r.horas_extra), C('num', r.feriados_extra),
         C('money', r.extra), C('money', r.otros_ingresos), C('money', r.incentivo), C('money', r.vacaciones_pago),
         C('money', r.bruto), C('money', r.afp), C('money', r.sfs), C('money', r.isr), C('money', r.retenciones),
         C('money', r.neto, true)
@@ -1289,7 +1288,7 @@
       totCols: (t) => [
         C('texto', ''), C('texto', ''), C('texto', 'Totales'),
         C('money', t.salario), C('texto', ''),
-        C('texto', ''), C('texto', ''), C('texto', ''),
+        C('texto', ''), C('texto', ''),
         C('money', t.extra), C('money', t.otros_ingresos), C('money', t.incentivo), C('money', t.vacaciones),
         C('money', t.bruto), C('money', t.afp), C('money', t.sfs), C('money', t.isr), C('money', t.retenciones),
         C('money', t.neto, true)
@@ -1297,7 +1296,7 @@
       cards: (t, count) => [
         ['Empleados', count, ''],
         ['Salario base', fmtRD(t.salario), ''],
-        ['Horas/domingos/feriados', fmtRD(t.extra), ''],
+        ['Horas/feriados extra', fmtRD(t.extra), ''],
         ['Otros ingresos', fmtRD(t.otros_ingresos), ''],
         ['Incentivos', fmtRD(t.incentivo), ''],
         ['Vacaciones', fmtRD(t.vacaciones), ''],
@@ -1334,36 +1333,63 @@
     }
   }
 
+  let nominaPage = 1;
+  const NOMINA_PAGE_SIZE = 20;
+
   function renderNominaSingleTable(def, data, empId) {
     $('nomina-table').classList.remove('hidden');
     $('nomina-quincenas').classList.add('hidden');
     $('nomina-thead').innerHTML = `<tr>${def.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
+    const allRows = data.rows || [];
+    const pages = Math.max(1, Math.ceil(allRows.length / NOMINA_PAGE_SIZE));
+    if (nominaPage > pages) nominaPage = pages;
+    const start = (nominaPage - 1) * NOMINA_PAGE_SIZE;
+    const rows = allRows.slice(start, start + NOMINA_PAGE_SIZE);
     const tb = $('nomina-tbody');
-    tb.innerHTML = data.rows.length ? data.rows.map(r =>
+    tb.innerHTML = rows.length ? rows.map(r =>
       `<tr>${def.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
     bindNominaExtras(tb, data);
     const t = data.totales;
-    $('nomina-tfoot').innerHTML = data.rows.length
+    $('nomina-tfoot').innerHTML = allRows.length
       ? `<tr>${def.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
       : '';
+    const bar = $('nomina-pagination');
+    if (bar) {
+      bar.classList.toggle('hidden', allRows.length <= NOMINA_PAGE_SIZE || empId);
+      $('nomina-page-info').textContent = `Página ${nominaPage} de ${pages} · ${allRows.length} empleado(s)`;
+      $('nomina-prev').disabled = nominaPage <= 1;
+      $('nomina-next').disabled = nominaPage >= pages;
+    }
   }
 
   function renderNominaTables(tables, data, empId) {
     $('nomina-table').classList.add('hidden');
     $('nomina-quincenas').classList.remove('hidden');
     const t = data.totales;
+    const allRows = data.rows || [];
+    const pages = Math.max(1, Math.ceil(allRows.length / NOMINA_PAGE_SIZE));
+    if (nominaPage > pages) nominaPage = pages;
+    const start = (nominaPage - 1) * NOMINA_PAGE_SIZE;
+    const rows = allRows.slice(start, start + NOMINA_PAGE_SIZE);
     for (const table of tables) {
       const tbody = $(`nomina-${table.id}-tbody`);
       const thead = $(`nomina-${table.id}-thead`);
       const tfoot = $(`nomina-${table.id}-tfoot`);
       if (!tbody) continue;
       thead.innerHTML = `<tr>${table.headers.map(h => `<th>${esc(h)}</th>`).join('')}<th></th></tr>`;
-      tbody.innerHTML = data.rows.length ? data.rows.map(r =>
+      tbody.innerHTML = rows.length ? rows.map(r =>
         `<tr>${table.cols(r).map(nomColHtml).join('')}<td class="row-actions">${empId ? '' : `<button class="btn btn-ghost btn-sm" data-he="${r.id}">⏱ Extras</button>`}</td></tr>`).join('') : '';
       bindNominaExtras(tbody, data);
-      tfoot.innerHTML = data.rows.length
+      tfoot.innerHTML = allRows.length
         ? `<tr>${table.totCols(t).map(nomColHtml).join('')}<td></td></tr>`
         : '';
+    }
+    const bar = $('nomina-pagination');
+    if (bar) {
+      bar.classList.toggle('hidden', allRows.length <= NOMINA_PAGE_SIZE || empId);
+      $('nomina-page-info').textContent = `Página ${nominaPage} de ${pages} · ${allRows.length} empleado(s)`;
+      $('nomina-prev').disabled = nominaPage <= 1;
+      $('nomina-next').disabled = nominaPage >= pages;
     }
   }
 
@@ -1384,7 +1410,6 @@
         employee_id: empId,
         mes, anio,
         horas_extra: Number($('he-horas').value) || 0,
-        domingos_extra: Number($('he-domingos').value) || 0,
         feriados_extra: Number($('he-feriados').value) || 0,
         otros_ingresos: Number($('he-otros').value) || 0,
         nota: $('he-nota').value
@@ -1853,25 +1878,31 @@
     if (next) next.addEventListener('click', () => { if (repPage < Math.ceil(repPageRows.length / REP_PAGE_SIZE)) { repPage++; renderReportPage(); } });
   }
 
-  async function loadReportPlantilla() {
-    try {
-      const res = await window.api.reportePlantilla('activo');
-      if (!res.ok) throw new Error(res.error);
-      renderReport('Plantilla activa', ['Cédula', 'Nombre', 'Sexo', 'Puesto', 'Departamento', 'Salario', 'Ingreso', 'NSS', 'ARS', 'AFP', 'Contrato'],
-        res.data.map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.sexo, r.puesto, r.departamento, fmtRD(r.salario), r.fecha_ingreso, r.nss, r.ars, r.afp, CONTRATO_LABEL[r.tipo_contrato] || r.tipo_contrato || '']),
-        'No hay empleados activos.');
-    } catch (e) { toast(e.message, 'error'); }
+  // Años de antigüedad/servicio a partir de una fecha DD/MM/AAAA.
+  function antiguedadAnios(fecha) {
+    if (!fecha) return null;
+    const m = String(fecha).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    const ing = new Date(+m[3], +m[2] - 1, +m[1]);
+    if (isNaN(ing.getTime())) return null;
+    const now = new Date();
+    let anios = now.getFullYear() - ing.getFullYear();
+    const mm = now.getMonth() - ing.getMonth();
+    if (mm < 0 || (mm === 0 && now.getDate() < ing.getDate())) anios--;
+    return anios;
   }
 
   async function loadReportAntiguedad() {
     try {
       const res = await window.api.reporteAntiguedad();
       if (!res.ok) throw new Error(res.error);
-      renderReport('Antigüedad', ['Cédula', 'Nombre', 'Puesto', 'Departamento', 'Fecha de ingreso'],
-        res.data.map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.puesto, r.departamento, r.fecha_ingreso]),
+      renderReport('Antigüedad laboral', ['Cédula', 'Nombre', 'Fecha de ingreso', 'Años', 'Puesto', 'Departamento'],
+        res.data.map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_ingreso, antiguedadAnios(r.fecha_ingreso), r.puesto, r.departamento]),
         'No hay empleados con fecha de ingreso registrada.');
     } catch (e) { toast(e.message, 'error'); }
   }
+
+
 
   async function loadReportCumpleanos() {
     const mes = Number($('rep-mes').value) || new Date().getMonth() + 1;
@@ -1913,8 +1944,8 @@
     try {
       const res = await window.api.reporteEmpleados();
       if (!res.ok) throw new Error(res.error);
-      renderReport('Informe de empleados activos', ['Cédula', 'Nombre', 'Puesto', 'Departamento', 'Salario', 'Tipo', 'Ingreso', 'Contrato', 'ARS', 'AFP'],
-        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.puesto, r.departamento, fmtRD(r.salario), r.tipo_salario, r.fecha_ingreso, CONTRATO_LABEL[r.tipo_contrato] || r.tipo_contrato || '', r.ars, r.afp]),
+      renderReport('Informe de empleados activos', ['Cédula', 'Nombre', 'Sexo', 'Puesto', 'Departamento', 'Salario', 'Tipo', 'Ingreso', 'Contrato', 'NSS', 'ARS', 'AFP'],
+        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.sexo, r.puesto, r.departamento, fmtRD(r.salario), r.tipo_salario, r.fecha_ingreso, CONTRATO_LABEL[r.tipo_contrato] || r.tipo_contrato || '', r.nss, r.ars, r.afp]),
         'No hay empleados activos.');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -1935,17 +1966,6 @@
       });
       renderReport('Cédulas por vencer', ['Cédula', 'Nombre', 'Vencimiento', 'Estado', 'Puesto', 'Departamento'],
         rows, 'Sin cédulas con vencimiento registrado.');
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
-  async function loadReportAniversarios() {
-    const anio = Number($('rep-anio').value) || new Date().getFullYear();
-    try {
-      const res = await window.api.reporteAniversarios(anio);
-      if (!res.ok) throw new Error(res.error);
-      renderReport('Aniversarios laborales ' + anio, ['Cédula', 'Nombre', 'Fecha de ingreso', 'Años', 'Puesto', 'Departamento'],
-        (res.data || []).map(r => [r.cedula, `${r.nombres} ${r.apellidos}`, r.fecha_ingreso, r.anios, r.puesto, r.departamento]),
-        'Sin aniversarios calculados para ' + anio + '.');
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -3333,6 +3353,8 @@
     $('nomina-mes').value = new Date().getMonth() + 1;
     $('nomina-anio').value = new Date().getFullYear();
     $('btn-nomina-calcular').addEventListener('click', loadNomina);
+    $('nomina-prev').addEventListener('click', () => { if (nominaPage > 1) { nominaPage--; loadNomina(); } });
+    $('nomina-next').addEventListener('click', () => { nominaPage++; loadNomina(); });
     $('btn-nomina-regalia').addEventListener('click', loadRegalia);
     $('btn-nomina-csv').addEventListener('click', exportNominaExcel);
     $('btn-regalia-csv').addEventListener('click', exportRegaliaExcel);
@@ -3348,14 +3370,13 @@
       recalcVpMonto();
     });
     $('vp-dias').addEventListener('input', recalcVpMonto);
-    $('nomina-emp').addEventListener('change', loadNomina);
-    $('nomina-depto').addEventListener('change', loadNomina);
-    $('nomina-vista').addEventListener('change', loadNomina);
-    const goNomina = () => loadNomina();
+    $('nomina-emp').addEventListener('change', () => { nominaPage = 1; loadNomina(); });
+    $('nomina-depto').addEventListener('change', () => { nominaPage = 1; loadNomina(); });
+    $('nomina-vista').addEventListener('change', () => { nominaPage = 1; loadNomina(); });
+    const goNomina = () => { nominaPage = 1; loadNomina(); };
     $('nomina-mes').addEventListener('change', goNomina);
     $('nomina-anio').addEventListener('change', goNomina);
 
-    $('btn-rep-plantilla').addEventListener('click', loadReportPlantilla);
     $('btn-rep-antiguedad').addEventListener('click', loadReportAntiguedad);
     $('btn-rep-cumpleanos').addEventListener('click', loadReportCumpleanos);
     $('btn-rep-deptos').addEventListener('click', loadReportDepartamentos);
@@ -3363,7 +3384,6 @@
     $('btn-rep-nomina-deptos').addEventListener('click', loadReportNominaDepartamentos);
     $('btn-rep-empleados').addEventListener('click', loadReportEmpleados);
     $('btn-rep-cedulas').addEventListener('click', loadReportCedulasVencer);
-    $('btn-rep-aniversarios').addEventListener('click', loadReportAniversarios);
     $('btn-rep-beneficios').addEventListener('click', loadReportBeneficios);
     $('btn-rep-csv').addEventListener('click', exportReportExcel);
     $('btn-rep-imprimir').addEventListener('click', printReport);

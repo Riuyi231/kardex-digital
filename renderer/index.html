@@ -300,15 +300,12 @@
         </header>
         <div class="card extra-card hidden" id="extra-card">
           <div class="extra-card-head">
-            <strong>Horas extra, domingos y feriados — <span id="extra-emp-name"></span></strong>
+            <strong>Horas extra y feriados — <span id="extra-emp-name"></span></strong>
             <span class="muted">Recargo 100% (2×) la hora y 100% (2×) el día según Código de Trabajo.</span>
           </div>
           <div class="vac-form">
             <label>Horas extra
               <input id="he-horas" type="number" min="0" step="0.5" value="0" placeholder="0" />
-            </label>
-            <label>Domingos extra
-              <input id="he-domingos" type="number" min="0" step="1" value="0" placeholder="0" />
             </label>
             <label>Feriados extra (días)
               <input id="he-feriados" type="number" min="0" step="1" value="0" placeholder="0" />
@@ -399,6 +396,11 @@
               <tbody id="nomina-tbody"></tbody>
               <tfoot id="nomina-tfoot"></tfoot>
             </table>
+            <div class="pagination hidden" id="nomina-pagination">
+              <button class="btn btn-ghost" id="nomina-prev">← Anterior</button>
+              <span id="nomina-page-info" class="pagination-info"></span>
+              <button class="btn btn-ghost" id="nomina-next">→ Siguiente</button>
+            </div>
           </div>
           <div id="nomina-quincenas" class="hidden">
             <h3 class="quincena-title">Primera quincena</h3>
@@ -453,21 +455,19 @@
             <p>Plantilla, antigüedad, cumpleaños, costo por departamento, cédulas, aniversarios y más.</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btn-rep-plantilla">Plantilla</button>
+            <button class="btn btn-primary" id="btn-rep-empleados">Empleados</button>
             <button class="btn btn-primary" id="btn-rep-antiguedad">Antigüedad</button>
             <button class="btn btn-primary" id="btn-rep-cumpleanos">Cumpleaños</button>
             <select id="rep-mes" title="Mes de cumpleaños"></select>
-            <button class="btn btn-ghost" id="btn-rep-deptos">Departamentos</button>
+            <button class="btn btn-primary" id="btn-rep-deptos">Departamentos</button>
             <select id="rep-anio" title="Año para el reporte fiscal 609 (Planilla de pago)"></select>
             <button class="btn btn-primary" id="btn-rep-609">🧾 Reporte 609</button>
-            <button class="btn btn-ghost" id="btn-rep-nomina-deptos">💰 Costo por depto.</button>
-            <button class="btn btn-ghost" id="btn-rep-empleados">Empleados</button>
-            <button class="btn btn-ghost" id="btn-rep-cedulas">Cédulas por vencer</button>
-            <button class="btn btn-ghost" id="btn-rep-aniversarios">Aniversarios</button>
-            <button class="btn btn-ghost" id="btn-rep-beneficios">Beneficios</button>
-            <button class="btn btn-ghost" id="btn-rep-csv">Exportar Excel</button>
-            <button class="btn btn-ghost" id="btn-rep-imprimir">🖨️ Imprimir</button>
-            <button class="btn btn-ghost" id="btn-rep-pdf">📄 Exportar PDF</button>
+            <button class="btn btn-primary" id="btn-rep-nomina-deptos">💰 Costo por depto.</button>
+            <button class="btn btn-primary" id="btn-rep-cedulas">Cédulas por vencer</button>
+            <button class="btn btn-primary" id="btn-rep-beneficios">Beneficios</button>
+            <button class="btn btn-primary" id="btn-rep-csv">Exportar Excel</button>
+            <button class="btn btn-primary" id="btn-rep-imprimir">🖨️ Imprimir</button>
+            <button class="btn btn-primary" id="btn-rep-pdf">📄 Exportar PDF</button>
           </div>
         </header>
         <div class="card table-card" id="report-content">

@@ -145,9 +145,16 @@ function extractDateText(text) {
 
 function splitName(full) {
   if (!full) return { nombres: '', apellidos: '' };
-  const tokens = full.trim().split(/\s+/);
+  const text = full.trim();
+  // "APELLIDOS, NOMBRES" (con coma invertida) → apellidos antes de la coma.
+  const comma = text.split(',');
+  if (comma.length === 2 && comma[0].trim() && comma[1].trim()) {
+    return { apellidos: comma[0].trim().split(/\s+/).join(' '), nombres: comma[1].trim().split(/\s+/).join(' ') };
+  }
+  const tokens = text.split(/\s+/);
   if (tokens.length === 1) return { nombres: tokens[0], apellidos: '' };
   if (tokens.length === 2) return { nombres: tokens[0], apellidos: tokens[1] };
+  if (tokens.length === 3) return { nombres: tokens[0], apellidos: tokens.slice(1).join(' ') };
   return { nombres: tokens.slice(0, -2).join(' '), apellidos: tokens.slice(-2).join(' ') };
 }
 
@@ -219,12 +226,20 @@ function linesFromWords(words) {
 function bestLabelMatch(line) {
   let best = null;
   const n = normLabel(line.text);
+  const rawUpper = String(line.text).toUpperCase();
+  // No confundir una línea que claramente es un dato (fecha, cédula, o solo valor)
+  // con un rótulo. Esto evita que los valores caigan en campos equivocados.
+  const looksLikeValue =
+    /^\d{2,4}[\s/.\-]\d{1,2}[\s/.\-]\d{2,4}/.test(rawUpper) || // fecha al inicio
+    /^\d{3}\s*[-.]?\s*\d{7}\s*[-.]?\s*\d/.test(rawUpper) ||       // cédula al inicio
+    /^\s*[MF]\s*$/.test(rawUpper);                                 // solo sexo
+  if (looksLikeValue) return null;
   for (const def of LABEL_DEFS) {
     if ((def.key === 'nombres' || def.key === 'apellidos') && /NOMBRE|APELLIDO/.test(n) && /PADRE|MADRE/.test(n)) continue;
     for (const lbl of def.labels) {
       let sim = 0;
       if (n === lbl || n.startsWith(lbl)) sim = 1;
-      else {
+      else if (lbl.length >= 8 || n.length >= 8) {
         const maxErr = lbl.length >= 12 ? 2 : 1;
         if (findFuzzyIndex(n, lbl, maxErr) === 0) sim = 0.92;
         else if (n.length >= 3) sim = similarity(n, lbl);
@@ -346,7 +361,17 @@ function extractLabeledFields(front, back) {
         );
         value = extractValueFromWords(region, m.key);
       }
-      if (value && !result[m.key]) result[m.key] = value;
+      if (value && !result[m.key]) {
+        // El rótulo compuesto "NOMBRE Y APELLIDOS" suele contener el nombre completo:
+        // sepáralo en nombres y apellidos para no invertirlo ni dejarlo en un solo campo.
+        if (m.key === 'nombres' && /NOMBRE\s*Y\s*APELLIDOS/i.test(m.lbl) && /^.{2,}$/.test(value)) {
+          const spl = splitName(value);
+          if (!result.nombres && spl.nombres) result.nombres = spl.nombres;
+          if (!result.apellidos && spl.apellidos) result.apellidos = spl.apellidos;
+        } else {
+          result[m.key] = value;
+        }
+      }
     }
   }
 
