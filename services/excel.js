@@ -69,6 +69,9 @@ function addGroupedSheet(ws, sheet, usedNames) {
     rowNum += 2;
   }
   let widths = null;
+  // Recopila, por cada columna numérica, las celdas de los subtotales de cada
+  // tabla para poder generar el TOTAL GENERAL como fórmula de SUMA.
+  const grandCells = {};
   for (const tbl of tables) {
     const headers = (tbl.headers || []).map(String);
     const dataRows = (tbl.rows || []).map(r => r.map(c => (c == null ? '' : c)));
@@ -84,17 +87,30 @@ function addGroupedSheet(ws, sheet, usedNames) {
     let base = sanitizeTableName(tbl.title || tbl.name || sheet.name);
     let tableName = uniqueName(base, usedNames);
     if (rows.length) {
+      const tblRef = rowNum; // cabecera de la tabla (ref de addTable)
       ws.addTable({
         name: tableName,
-        ref: `A${rowNum}`,
+        ref: `A${tblRef}`,
         headerRow: true,
         style: { theme: 'TableStyleMedium2', showRowStripes: true },
         columns: headers.map(h => ({ name: h })),
         rows
       });
       if (footer) {
-        const row = ws.getRow(rowNum + rows.length);
-        row.eachCell((cell) => { cell.font = { bold: true }; });
+        const dataStart = tblRef + 1; // primera fila de datos
+        const dataEnd = tblRef + dataRows.length; // última fila de datos (sin el footer)
+        const footRowIdx = tblRef + rows.length; // fila del subtotal (footer)
+        const footRow = ws.getRow(footRowIdx);
+        footRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const idx = colNumber - 1;
+          const fv = footer[idx];
+          if (typeof fv === 'number' && !isNaN(fv)) {
+            const colLetter = ws.getColumn(colNumber).letter;
+            cell.value = { formula: `SUM(${colLetter}${dataStart}:${colLetter}${dataEnd})` };
+            (grandCells[colNumber] = grandCells[colNumber] || []).push(`${colLetter}${footRowIdx}`);
+          }
+          cell.font = { bold: true };
+        });
       }
       rowNum += rows.length + 1; // fila de la tabla + cabecera
     } else {
@@ -108,8 +124,15 @@ function addGroupedSheet(ws, sheet, usedNames) {
     ws.getCell(rowNum, 1).value = 'TOTAL GENERAL';
     ws.getCell(rowNum, 1).font = { bold: true };
     sheet.grandTotal.forEach((v, idx) => {
-      ws.getCell(rowNum, idx + 2).value = v == null ? '' : v;
-      ws.getCell(rowNum, idx + 2).font = { bold: true };
+      const colNumber = idx + 2; // la columna 1 tiene el rótulo
+      const colLetter = ws.getColumn(colNumber).letter;
+      // Si hay subtotales en esa columna, el total general es la suma de esos subtotales.
+      if (grandCells[colNumber] && grandCells[colNumber].length) {
+        ws.getCell(rowNum, colNumber).value = { formula: `SUM(${grandCells[colNumber].join(',')})` };
+      } else {
+        ws.getCell(rowNum, colNumber).value = (typeof v === 'number' && !isNaN(v)) ? { formula: '0' } : (v == null ? '' : v);
+      }
+      ws.getCell(rowNum, colNumber).font = { bold: true };
     });
   }
   if (widths) widths.forEach((w, idx) => { ws.getColumn(idx + 1).width = w; });
@@ -118,6 +141,7 @@ function addGroupedSheet(ws, sheet, usedNames) {
 // sheets: [{ name, headers, rows, footer }] o [{ name, title, tables, grandTotal }]
 function buildWorkbook(sheets) {
   const wb = new ExcelJS.Workbook();
+  wb.calcProperties.fullCalcOnLoad = true;
   const usedNames = {};
   const usedSheets = {};
   for (const sheet of sheets || []) {
