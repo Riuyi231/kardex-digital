@@ -326,7 +326,7 @@ module.exports = {
   liquidaciones: makeNs('liquidaciones', ['listForEmployee', 'listAll', 'save', 'delete']),
   incentivos: makeNs('incentivos', ['listForPeriod', 'list', 'create', 'update', 'delete']),
   deduccionesManuales: makeNs('deduccionesManuales', ['listForPeriod', 'listForEmployee', 'create', 'update', 'delete']),
-  salarioHistorial: makeNs('salarioHistorial', ['listForEmployee', 'record', 'getSalarioPromedio', 'resetBaseline']),
+  salarioHistorial: makeNs('salarioHistorial', ['listForEmployee', 'record', 'getSalarioPromedio', 'resetBaseline', 'getRegaliaMasivo']),
   pagoVacaciones: makeNs('pagoVacaciones', ['get', 'listForPeriod', 'totalDiasPagados', 'save', 'delete']),
   vacaciones: makeNs('vacaciones', ['list', 'create', 'delete']),
   reportes: makeNs('reportes', ['plantilla', 'antiguedad', 'cumpleanos', 'departamentos', 'nominaDepartamentos', 'empleadosCompleto', 'cedulasVencer', 'aniversarios', 'beneficios']),

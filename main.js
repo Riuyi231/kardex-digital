@@ -771,10 +771,16 @@ function registerIpc() {
     return true;
   }));
 
-  ipcMain.handle('nomina:regalia', wrap((e, { anio } = {}) => {
+  ipcMain.handle('nomina:regalia', wrap(async (e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
     const actives = db.employees.list('', 'activo');
-    return nomina.calcRegalia(actives, anio, db.salarioHistorial.getSalarioPromedio, db.salarioHistorial.listForEmployee);
+    let hist = null;
+    if (db.salarioHistorial && typeof db.salarioHistorial.getRegaliaMasivo === 'function') {
+      try { hist = await db.salarioHistorial.getRegaliaMasivo(anio); } catch (err) { hist = null; }
+    }
+    const histFn = hist && hist.salarios ? (id) => hist.salarios[id] : db.salarioHistorial.getSalarioPromedio;
+    const listFn = hist && hist.cambios ? (id) => hist.cambios[id] || [] : db.salarioHistorial.listForEmployee;
+    return nomina.calcRegalia(actives, anio, histFn, listFn);
   }));
 
   ipcMain.handle('salarios:reset-base', wrap((e) => {
