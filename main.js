@@ -802,6 +802,37 @@ function registerIpc() {
     return res.filePath;
   }));
 
+  // Diálogo nativo para elegir la quincena a exportar (window.prompt no funciona en Electron).
+  ipcMain.handle('export:choose-quincena', wrap(async (e, { defOpc = 1 } = {}) => {
+    requireRole(['admin', 'editor']);
+    const defaultId = defOpc === 1 ? 0 : defOpc === 2 ? 1 : 2;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Primera quincena', 'Segunda quincena', 'Mes completo', 'Cancelar'],
+      defaultId,
+      cancelId: 3,
+      title: 'Exportar nómina quincenal',
+      message: '¿Qué período desea exportar?',
+      detail: 'Primera quincena (sin retenciones)\nSegunda quincena (con retenciones)\nMes completo (ambas quincenas)'
+    });
+    if (response === 3 || response === -1) return null;
+    return response + 1;
+  }));
+
+  // Confirmación nativa (window.confirm no funciona en Electron).
+  ipcMain.handle('dialog:confirm', wrap(async (e, { message = '' } = {}) => {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Cancelar', 'Aceptar'],
+      defaultId: 1,
+      cancelId: 0,
+      title: 'Confirmar',
+      message: String(message),
+      noLink: true
+    });
+    return response === 1;
+  }));
+
   function sanitizeFilename(s) {
     return String(s || 'empleado').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_\-]+/g, '_').replace(/^_+|_+$/g, '');
   }

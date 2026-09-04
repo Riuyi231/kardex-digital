@@ -829,7 +829,7 @@
   }
 
   async function deleteLiquidacion(id) {
-    if (!confirm('¿Eliminar este finiquito del historial?')) return;
+    if (!(await window.api.confirmBox('¿Eliminar este finiquito del historial?'))) return;
     try {
       const r = await window.api.deleteLiquidacion(id);
       if (!r.ok) throw new Error(r.error);
@@ -1019,7 +1019,7 @@
         </tr>`).join('')
         : '<tr><td colspan="8" class="muted center">Sin permisos ni vacaciones registrados.</td></tr>';
       $('vacaciones-tbody').querySelectorAll('[data-vdel]').forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('¿Eliminar este registro?')) return;
+        if (!(await window.api.confirmBox('¿Eliminar este registro?'))) return;
         try {
           const r = await window.api.deleteVacacion(Number(b.dataset.vdel));
           if (!r.ok) throw new Error(r.error);
@@ -1747,7 +1747,7 @@
     const empId = Number($('nomina-emp').value);
     const mes = Number($('nomina-mes').value) || new Date().getMonth() + 1;
     const anio = Number($('nomina-anio').value) || new Date().getFullYear();
-    if (!confirm('¿Eliminar el pago de vacaciones de este período?')) return;
+    if (!(await window.api.confirmBox('¿Eliminar el pago de vacaciones de este período?'))) return;
     try {
       const res = await window.api.getResumenPagoVacaciones(empId, mes, anio);
       if (!res.ok || !res.data || !res.data.periodo || !res.data.periodo.id) { toast('No hay pago para eliminar', 'error'); return; }
@@ -1920,16 +1920,8 @@
       const qSel = $('nomina-quincena');
       const hoy = new Date().getDate();
       const defOpc = hoy <= 15 ? 1 : 2;
-      const opc = window.prompt(
-        'Exportar nómina quincenal:\n\n' +
-        '1 = Primera quincena (sin retenciones)\n' +
-        '2 = Segunda quincena (con retenciones)\n' +
-        '3 = Mes completo (ambas quincenas)\n\n' +
-        '[Enter] = ' + (defOpc === 1 ? 'Primera quincena' : 'Segunda quincena'),
-        String(defOpc)
-      );
-      const parsed = parseInt(opc, 10);
-      const choice = (parsed === 1 || parsed === 2 || parsed === 3) ? parsed : defOpc;
+      const opc = await window.api.chooseQuincena(defOpc);
+      const choice = opc || defOpc;
       if (choice === 1 || choice === 2) {
         qSel.value = String(choice);
         const label = choice === 1 ? 'Primera quincena (sin retenciones)' : 'Segunda quincena (con retenciones)';
@@ -2528,7 +2520,7 @@
   }
 
   async function resetDocSettings() {
-    if (!confirm('¿Restablecer todos los modelos de documentos a los predeterminados del programa?\nSe quitarán el logo, las plantillas y los textos personalizados. Esta acción no se puede deshacer.')) return;
+    if (!(await window.api.confirmBox('¿Restablecer todos los modelos de documentos a los predeterminados del programa?\nSe quitarán el logo, las plantillas y los textos personalizados. Esta acción no se puede deshacer.'))) return;
     const msg = $('doc-save-msg');
     msg.textContent = '';
     const payload = {
@@ -2595,7 +2587,7 @@
   }
 
   async function resetSalarioHistorial() {
-    const ok = confirm('¿Reiniciar el historial de salarios?\n\nBorra todos los cambios de salario registrados y deja el salario actual de cada empleado activo como base desde el 1 de enero del año.\n\nEsta acción NO se puede deshacer.');
+    const ok = await window.api.confirmBox('¿Reiniciar el historial de salarios?\n\nBorra todos los cambios de salario registrados y deja el salario actual de cada empleado activo como base desde el 1 de enero del año.\n\nEsta acción NO se puede deshacer.');
     if (!ok) return;
     try {
       const res = await window.api.resetSalarioHistorial();
@@ -2632,7 +2624,7 @@
   }
 
   async function restoreBackup(file) {
-    if (!confirm(`¿Restaurar el respaldo "${file}"? Se reemplazarán todos los datos actuales y la aplicación se recargará.`)) return;
+    if (!(await window.api.confirmBox(`¿Restaurar el respaldo "${file}"? Se reemplazarán todos los datos actuales y la aplicación se recargará.`))) return;
     try {
       const res = await window.api.backupRestore(file);
       if (!res.ok) throw new Error(res.error);
@@ -3309,7 +3301,7 @@
 
   async function deleteEmployee() {
     if (!editId) return;
-    if (!confirm('¿Eliminar este expediente? Esta acción no se puede deshacer.')) return;
+    if (!(await window.api.confirmBox('¿Eliminar este expediente? Esta acción no se puede deshacer.'))) return;
     try {
       const res = await window.api.deleteEmployee(editId);
       if (!res.ok) throw new Error(res.error);
@@ -3350,7 +3342,7 @@
       tb.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
         const id = Number(b.dataset.del);
         if (id === currentUser.id) { toast('No puede eliminar su propia cuenta', 'error'); return; }
-        if (!confirm('¿Eliminar este usuario?')) return;
+        if (!(await window.api.confirmBox('¿Eliminar este usuario?'))) return;
         try {
           const r = await window.api.deleteUser(id);
           if (!r.ok) throw new Error(r.error);

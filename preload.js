@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('api', {
   savePagoVacaciones: (data) => ipcRenderer.invoke('pagoVacaciones:save', { data }),
   deletePagoVacacion: (id) => ipcRenderer.invoke('pagoVacaciones:delete', { id }),
   exportExcel: (filename, sheets) => ipcRenderer.invoke('export:excel', { filename, sheets }),
+  chooseQuincena: (defOpc) => ipcRenderer.invoke('export:choose-quincena', { defOpc }),
+  confirmBox: (message) => ipcRenderer.invoke('dialog:confirm', { message }),
   exportCedulaPdf: (employee_id) => ipcRenderer.invoke('export:cedula-pdf', { employee_id }),
   exportCedulasPdf: () => ipcRenderer.invoke('export:cedulas-pdf'),
 
