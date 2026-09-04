@@ -539,6 +539,22 @@
         btn.addEventListener('click', () => openEmployee(btn.getAttribute('data-open-emp')));
       });
 
+      // Propietario
+      const propietario = rows.find(r => r.es_propietario);
+      const propBox = $('dash-propietario');
+      if (propietario) {
+        propBox.innerHTML =
+          `<div class="dash-alerta"><span>Nombre</span><em>${esc(propietario.nombres)} ${esc(propietario.apellidos)}</em></div>` +
+          `<div class="dash-alerta"><span>Cédula</span><em>${esc(propietario.cedula || '—')}</em></div>` +
+          `<div class="dash-alerta"><span>Departamento</span><em>${esc(propietario.departamento || '—')}</em></div>` +
+          `<div class="dash-alerta"><span>Puesto</span><em>${esc(propietario.puesto || '—')}</em></div>` +
+          `<div class="dash-alerta" style="margin-top:8px"><span></span><button class="btn btn-ghost btn-sm" data-edit-propietario style="cursor:pointer">✏️ Editar propietario</button></div>`;
+        const btn = propBox.querySelector('[data-edit-propietario]');
+        if (btn) btn.addEventListener('click', () => openEmployee(propietario.id));
+      } else {
+        propBox.innerHTML = '<p class="muted small">No hay propietario registrado.</p>';
+      }
+
       // Próximas alertas
       const alerts = ((notifRes && notifRes.data && notifRes.data.events) || []).slice(0, 6);
       const notifBox = $('dash-alertas');
@@ -1104,6 +1120,23 @@
       const emp = nominaEmployees.find(e => e.id === empId);
       $('extra-emp-name').textContent = emp ? `${emp.nombres} ${emp.apellidos}` : `#${empId}`;
       $('vp-emp-name').textContent = emp ? `${emp.nombres} ${emp.apellidos}` : `#${empId}`;
+      const ev = $('extras-valores');
+      if (ev) {
+        const salBase = Number(emp.salario) || 0;
+        const tipo = String(emp.tipo_salario || 'mensual').toLowerCase();
+        let salMensual = salBase;
+        if (tipo === 'quincenal') salMensual = salBase * 2;
+        else if (tipo === 'semanal') salMensual = salBase * 4.33;
+        else if (tipo === 'diario') salMensual = salBase * 23.83;
+        else if (tipo === 'por_hora') salMensual = salBase * 192;
+        const horaNormal = salMensual / (23.83 * 8);
+        const horaExtra = horaNormal * 2;
+        const diaFeriado = (salMensual / 23.83) * 2;
+        $('ev-salario').textContent = fmtRD(salMensual);
+        $('ev-hora').textContent = fmtRD(horaNormal);
+        $('ev-hora-extra').textContent = fmtRD(horaExtra);
+        $('ev-dia').textContent = fmtRD(diaFeriado);
+      }
       try {
         const hx = await window.api.getHorasExtra(empId, mes, anio);
         if (hx.ok) {
@@ -2196,15 +2229,15 @@
       const data = res.data;
       const rows = data.rows.map(r => [
         r.cedula || '—', `${r.apellidos}, ${r.nombres}`, fmtRD(r.bruto),
-        fmtRD(r.sfsPatronal), fmtRD(r.iessl), fmtRD(r.srl), fmtRD(r.afpPatronal), fmtRD(r.infotep),
+        fmtRD(r.sfsPatronal), fmtRD(r.srl), fmtRD(r.afpPatronal), fmtRD(r.infotep),
         fmtRD(r.aporEmpleador), fmtRD(r.totalEmpresa)
       ]);
       if (data.rows.length) {
-        rows.push(['', 'TOTALES', fmtRD(data.totales.bruto), fmtRD(data.totales.sfsPatronal), fmtRD(data.totales.iessl),
+        rows.push(['', 'TOTALES', fmtRD(data.totales.bruto), fmtRD(data.totales.sfsPatronal),
           fmtRD(data.totales.srl), fmtRD(data.totales.afpPatronal), fmtRD(data.totales.infotep),
           fmtRD(data.totales.aporEmpleador), fmtRD(data.totales.totalEmpresa)]);
       }
-      renderReport(`Gastos de la empresa ${anio}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS patr. (7.09%)', 'IESSL (0.40%)', 'SRL (1.20%)', 'AFP patr. (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes', 'Total costo empresa'],
+      renderReport(`Gastos de la empresa ${anio}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'Salud (7.09%)', 'SRL (1.20%)', 'Pensión (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes', 'Total costo empresa'],
         rows, 'No hay datos para ' + anio + '.', 'gastos-empresa');
     } catch (e) { toast(e.message, 'error'); }
   }

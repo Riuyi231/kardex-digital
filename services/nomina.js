@@ -141,10 +141,13 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
   const vacacionDias = pv ? Number(pv.dias) || 0 : 0;
   const vacacionPago = pv ? round2(Number(pv.monto) || 0) : 0;
   const bruto = round2(sm + extra + otrosIngresos + transporte + incentivo + vacacionPago);
-  const baseAFP = Math.min(bruto, AFP_TOPE);
-  const baseSFS = Math.min(bruto, SFS_TOPE);
+  // AFP y SFS: principal de nómina (según criterio de la empresa) se cotizan solo sobre
+  // el salario base; las horas extra/feriados y demás compensaciones no cotizan a TSS.
+  const baseAFP = Math.min(sm, AFP_TOPE);
+  const baseSFS = Math.min(sm, SFS_TOPE);
   const afp = round2(baseAFP * AFP_EMP);
   const sfs = round2(baseSFS * SFS_EMP);
+  // ISR: la retención SÍ toma en cuenta todos los conceptos (bruto completo).
   const baseImponibleISR = round2(bruto - afp - sfs);
   const isr = calcISRMensual(baseImponibleISR);
   const retenciones = round2(afp + sfs + isr);

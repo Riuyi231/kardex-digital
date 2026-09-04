@@ -1332,9 +1332,9 @@ function registerIpc() {
 
   ipcMain.handle('reportes:gastos-empresa-excel', wrap(async (e, { anio } = {}) => {
     const data = reporteGastosEmpresa(anio);
-    const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'SFS patr. (7.09%)', 'IESSL (0.40%)', 'SRL (1.20%)', 'AFP patr. (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes empleador', 'Total costo empresa'];
-    const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfsPatronal, r.iessl, r.srl, r.afpPatronal, r.infotep, r.aporEmpleador, r.totalEmpresa]);
-    const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfsPatronal, data.totales.iessl, data.totales.srl, data.totales.afpPatronal, data.totales.infotep, data.totales.aporEmpleador, data.totales.totalEmpresa];
+    const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'Salud (7.09%)', 'SRL (1.20%)', 'Pensión (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes empleador', 'Total costo empresa'];
+    const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfsPatronal, r.srl, r.afpPatronal, r.infotep, r.aporEmpleador, r.totalEmpresa]);
+    const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfsPatronal, data.totales.srl, data.totales.afpPatronal, data.totales.infotep, data.totales.aporEmpleador, data.totales.totalEmpresa];
     return saveReportExcel('Guardar Gastos de la empresa', `gastos_empresa_${data.anio}.xlsx`, data.anio,
       headers, rows, footer, 'reportes:gastos-empresa-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
   }));
