@@ -130,7 +130,7 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
   const horasExtra = Number(ex.horas_extra) || 0;
   const domingosExtra = Number(ex.domingos_extra) || 0;
   const feriadosExtra = Number(ex.feriados_extra) || 0;
-  const pagoHoras = round2(salarioHora(sm) * horasExtra * 2);
+  const pagoHoras = round2(salarioHora(sm) * horasExtra * 1.5);
   const pagoDomingos = round2(salarioDiario(sm) * domingosExtra * 2);
   const pagoFeriados = round2(salarioHora(sm) * feriadosExtra * 2);
   const extra = round2(pagoHoras + pagoDomingos + pagoFeriados);
@@ -162,7 +162,7 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
 // `extras` es un mapa { employee_id: { horas_extra, domingos_extra, feriados_extra, otros_ingresos } }.
 // `incentivos` es un mapa { employee_id: [{ monto, motivo }] }.
 // `pagosVacaciones` es un mapa { employee_id: { dias, monto, modalidad } }.
-// Horas extra, domingos y feriados se pagan con 100% de recargo (Código de Trabajo).
+// Horas extra se pagan con 50% de recargo; domingos y feriados con 100% de recargo (Código de Trabajo).
 function calcNomina(employees, mes, anio, extras = {}, incentivos = {}, pagosVacaciones = {}) {
   const rows = [];
   const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, neto: 0 };
