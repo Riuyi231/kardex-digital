@@ -8,7 +8,8 @@ const KEYS = [
   'doc_banco', 'doc_destinatario_tipo', 'doc_destinatario',
   'doc_tipo_constancia', 'doc_plantilla_constancia', 'doc_plantilla_constancia_name',
   'doc_tipo_carta', 'doc_plantilla_carta', 'doc_plantilla_carta_name',
-  'doc_tipo_solicitud', 'doc_plantilla_solicitud', 'doc_plantilla_solicitud_name'
+  'doc_tipo_solicitud', 'doc_plantilla_solicitud', 'doc_plantilla_solicitud_name',
+  'dept_categorias'
 ];
 
 const PLACEHOLDERS = [
@@ -76,14 +77,25 @@ function fmtFechaIngreso(v) {
   return String(v);
 }
 
-// Párrafo "Que …" usado por defecto en la constancia y la carta de salario generadas por el sistema
-// (mismo contenido para ambas, como pide el usuario).
+// Párrafo "Que …" usado por defecto en la carta (certificación) de salario generada por el sistema.
 const QUE_PARRAFO = [
   'Distinguidos Sres.:',
   '',
   'La empresa {{empresa}}, constituida de acuerdo con las leyes de la República Dominicana, debidamente representada para los fines de la presente, tiene a bien certificar lo siguiente:',
   '',
   'Que {{nombre_completo}}, de nacionalidad dominicana, mayor de edad, portador(a) de la Cédula No. {{cedula}}, domiciliado y residente en la ciudad de {{ciudad}}, trabaja en esta empresa desde el {{fecha_ingreso}}, hasta la fecha, desempeñando la función de {{puesto}} en el departamento de {{departamento}}, en cuya posición recibe un ingreso mensual base de {{salario_texto}}.',
+  '',
+  'Se expide la presente a solicitud de la parte interesada, para los fines que estime conveniente.'
+].join('\n');
+
+// Párrafo "Que …" usado por defecto en la carta de trabajo (constancia) generada por el sistema.
+// No menciona el salario del empleado.
+const QUE_PARRAFO_TRABAJO = [
+  'Distinguidos Sres.:',
+  '',
+  'La empresa {{empresa}}, constituida de acuerdo con las leyes de la República Dominicana, debidamente representada para los fines de la presente, tiene a bien certificar lo siguiente:',
+  '',
+  'Que {{nombre_completo}}, de nacionalidad dominicana, mayor de edad, portador(a) de la Cédula No. {{cedula}}, domiciliado y residente en la ciudad de {{ciudad}}, trabaja en esta empresa desde el {{fecha_ingreso}}, hasta la fecha, desempeñando la función de {{puesto}} en el departamento de {{departamento}}.',
   '',
   'Se expide la presente a solicitud de la parte interesada, para los fines que estime conveniente.'
 ].join('\n');
@@ -170,7 +182,7 @@ function buildConstanciaPdf(emp) {
     company_address: s.doc_company_address,
     logo: s.doc_logo,
     recipient: destinatarioName(s),
-    text: renderTemplate(s.doc_constancia_text || QUE_PARRAFO, emp, { empresa: s.doc_company_name, empresa_direccion: s.doc_company_address, firma_nombre: s.doc_firma_nombre, firma_cargo: s.doc_firma_cargo })
+    text: renderTemplate(s.doc_constancia_text || QUE_PARRAFO_TRABAJO, emp, { empresa: s.doc_company_name, empresa_direccion: s.doc_company_address, firma_nombre: s.doc_firma_nombre, firma_cargo: s.doc_firma_cargo })
   });
 }
 

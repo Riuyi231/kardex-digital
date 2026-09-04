@@ -403,9 +403,9 @@ function registerIpc() {
     return true;
   }));
 
-  ipcMain.handle('employees:list', wrap((e, { search, status } = {}) => {
+  ipcMain.handle('employees:list', wrap((e, { search, status, fecha_col, fecha_desde, fecha_hasta } = {}) => {
     requireAuth();
-    return db.employees.list(search, status);
+    return db.employees.list(search, status, { fecha_col, fecha_desde, fecha_hasta });
   }));
 
   ipcMain.handle('employees:stats', wrap(() => {
@@ -571,7 +571,7 @@ function registerIpc() {
     const now = new Date();
     const m = mes || now.getMonth() + 1;
     const y = anio || now.getFullYear();
-    const actives = db.employees.list('', 'activo');
+    const actives = db.employees.list('', 'activo').filter(e => !e.es_propietario);
     let empList = employee_id ? actives.filter(a => a.id === Number(employee_id)) : actives;
     if (departamento) empList = empList.filter(a => (a.departamento || '') === departamento);
     const extras = {};
@@ -773,7 +773,7 @@ function registerIpc() {
 
   ipcMain.handle('nomina:regalia', wrap(async (e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
-    const actives = db.employees.list('', 'activo');
+    const actives = db.employees.list('', 'activo').filter(e => !e.es_propietario);
     let hist = null;
     if (db.salarioHistorial && typeof db.salarioHistorial.getRegaliaMasivo === 'function') {
       try { hist = await db.salarioHistorial.getRegaliaMasivo(anio); } catch (err) { hist = null; }
@@ -1144,7 +1144,7 @@ function registerIpc() {
     const base = sanitizeFilename(`${emp.apellidos}_${emp.nombres}`);
     const fmt = format === 'docx' ? 'docx' : 'pdf';
     const r = await plantillas.renderDoc('constancia', emp, fmt);
-    return await saveDocFile(user, 'export:constancia-pdf', 'Guardar constancia de trabajo', `constancia_${base}.${fmt}`, r.buffer);
+    return await saveDocFile(user, 'export:constancia-pdf', 'Guardar carta de trabajo', `carta_trabajo_${base}.${fmt}`, r.buffer);
   }));
 
   ipcMain.handle('export:carta-salario-pdf', wrap(async (e, { employee_id, format } = {}) => {
@@ -1186,9 +1186,10 @@ function registerIpc() {
     return db.historial.list(Number(employee_id));
   }));
 
-  /* ============ Reporte fiscal 609 (Planilla de Pago) ============ */
+  /* ============ Reportes de gastos (planilla) ============ */
 
-  function reporte609(anio) {
+  // Agregados anuales por empleado: retenciones (SFS/AFP/ISR) y aportes patronales TSS.
+  function reporteAnualEmpleados(anio) {
     const y = Number(anio) || new Date().getFullYear();
     const byId = {};
     for (let mes = 1; mes <= 12; mes++) {
@@ -1196,18 +1197,33 @@ function registerIpc() {
       const r = nomina.calcNomina(empList, mes, y, extras, incentivos, pagosVacaciones);
       for (const row of r.rows) {
         if (!byId[row.id]) {
-          byId[row.id] = { id: row.id, nombres: row.nombres, apellidos: row.apellidos, cedula: row.cedula, bruto: 0, sfs: 0, afp: 0, isr: 0 };
+          byId[row.id] = { id: row.id, apellidos: row.apellidos, nombres: row.nombres, cedula: row.cedula,
+            bruto: 0, baseAFP: 0, baseSFS: 0, sfs: 0, afp: 0, isr: 0,
+            sfsPatronal: 0, iessl: 0, srl: 0, afpPatronal: 0, infotep: 0 };
         }
         const e = byId[row.id];
+        const ap = nomina.calcAportesPatronales(row.bruto);
         e.bruto = round2(e.bruto + row.bruto);
+        e.baseAFP = round2(e.baseAFP + Math.min(row.bruto, nomina.AFP_TOPE));
+        e.baseSFS = round2(e.baseSFS + Math.min(row.bruto, nomina.SFS_TOPE));
         e.sfs = round2(e.sfs + row.sfs);
         e.afp = round2(e.afp + row.afp);
         e.isr = round2(e.isr + row.isr);
+        e.sfsPatronal = round2(e.sfsPatronal + ap.sfsPatronal);
+        e.iessl = round2(e.iessl + ap.iessl);
+        e.srl = round2(e.srl + ap.srl);
+        e.afpPatronal = round2(e.afpPatronal + ap.afpPatronal);
+        e.infotep = round2(e.infotep + ap.infotep);
       }
     }
-    const rows = Object.values(byId)
-      .map((r) => ({ ...r, retenciones: round2(r.sfs + r.afp + r.isr) }))
-      .sort((a, b) => String(a.apellidos || '').localeCompare(String(b.apellidos || '')));
+    const rows = Object.values(byId).sort((a, b) => String(a.apellidos || '').localeCompare(String(b.apellidos || '')));
+    return { anio: y, rows };
+  }
+
+  // GASTOS DEL EMPLEADO (antes Reporte 609): planilla anual de retenciones por empleado.
+  function reporteGastosEmpleado(anio) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio);
+    rows.forEach((r) => { r.retenciones = round2(r.sfs + r.afp + r.isr); });
     const totales = rows.reduce((t, r) => {
       t.bruto += r.bruto; t.sfs += r.sfs; t.afp += r.afp; t.isr += r.isr; t.retenciones += r.retenciones;
       return t;
@@ -1216,29 +1232,88 @@ function registerIpc() {
     return { anio: y, rows, totales };
   }
 
-  ipcMain.handle('reportes:609', wrap((e, { anio } = {}) => {
+  // GASTOS DE LA EMPRESA: costo patronal anual por empleado + totales.
+  function reporteGastosEmpresa(anio) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio);
+    rows.forEach((r) => {
+      r.aporEmpleador = round2(r.sfsPatronal + r.iessl + r.srl + r.afpPatronal + r.infotep);
+      r.totalEmpresa = round2(r.bruto + r.aporEmpleador);
+    });
+    const totales = rows.reduce((t, r) => {
+      t.bruto += r.bruto;
+      t.sfsPatronal += r.sfsPatronal; t.iessl += r.iessl; t.srl += r.srl;
+      t.afpPatronal += r.afpPatronal; t.infotep += r.infotep;
+      t.aporEmpleador += r.aporEmpleador;
+      t.totalEmpresa += r.totalEmpresa;
+      return t;
+    }, { bruto: 0, sfsPatronal: 0, iessl: 0, srl: 0, afpPatronal: 0, infotep: 0, aporEmpleador: 0, totalEmpresa: 0 });
+    for (const k of Object.keys(totales)) totales[k] = round2(totales[k]);
+    return { anio: y, rows, totales };
+  }
+
+  // RIESGOS LABORALES: aporte patronal SRL (1.20%) sobre la base cotizable SFS.
+  function reporteRiesgosLaborales(anio) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio);
+    const totales = rows.reduce((t, r) => {
+      t.bruto += r.bruto; t.base += r.baseSFS; t.srl += r.srl;
+      return t;
+    }, { bruto: 0, base: 0, srl: 0 });
+    for (const k of Object.keys(totales)) totales[k] = round2(totales[k]);
+    return { anio: y, rows, totales };
+  }
+
+  ipcMain.handle('reportes:gastos-empleado', wrap((e, { anio } = {}) => {
     requireRole(['admin', 'editor']);
-    return reporte609(anio);
+    return reporteGastosEmpleado(anio);
   }));
 
-  ipcMain.handle('reportes:609-excel', wrap(async (e, { anio } = {}) => {
+  ipcMain.handle('reportes:gastos-empresa', wrap((e, { anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    return reporteGastosEmpresa(anio);
+  }));
+
+  ipcMain.handle('reportes:riesgos-laborales', wrap((e, { anio } = {}) => {
+    requireRole(['admin', 'editor']);
+    return reporteRiesgosLaborales(anio);
+  }));
+
+  async function saveReportExcel(title, defaultName, sheetName, headers, rows, footer, auditKey, auditDetail) {
     const user = requireRole(['admin', 'editor']);
-    const data = reporte609(anio);
-    const sheets = [{
-      name: 'Planilla 609',
-      headers: ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS', 'AFP', 'ISR (Renta)', 'Total retenciones'],
-      rows: data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfs, r.afp, r.isr, r.retenciones]),
-      footer: ['', 'TOTAL', data.totales.bruto, data.totales.sfs, data.totales.afp, data.totales.isr, data.totales.retenciones]
-    }];
     const res = await dialog.showSaveDialog(mainWindow, {
-      title: 'Guardar reporte 609',
-      defaultPath: path.join(app.getPath('documents'), `reporte_609_${data.anio}.xlsx`),
+      title, defaultPath: path.join(app.getPath('documents'), defaultName),
       filters: [{ name: 'Excel', extensions: ['xlsx'] }]
     });
     if (res.canceled || !res.filePath) return null;
-    await excel.writeExcelSheets(res.filePath, sheets);
-    db.audit.add(user, 'reportes:609-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+    await excel.writeExcelSheets(res.filePath, [{ name: sheetName, headers, rows, footer }]);
+    if (auditKey) db.audit.add(user, auditKey, auditDetail);
     return res.filePath;
+  }
+
+  ipcMain.handle('reportes:gastos-empleado-excel', wrap(async (e, { anio } = {}) => {
+    const data = reporteGastosEmpleado(anio);
+    const headers = ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS (3.04%)', 'AFP (2.87%)', 'ISR (progresivo)', 'Total retenciones'];
+    const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfs, r.afp, r.isr, r.retenciones]);
+    const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfs, data.totales.afp, data.totales.isr, data.totales.retenciones];
+    return saveReportExcel('Guardar Gastos del empleado', `gastos_empleado_${data.anio}.xlsx`, data.anio,
+      headers, rows, footer, 'reportes:gastos-empleado-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+  }));
+
+  ipcMain.handle('reportes:gastos-empresa-excel', wrap(async (e, { anio } = {}) => {
+    const data = reporteGastosEmpresa(anio);
+    const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'SFS patr. (7.09%)', 'IESSL (0.40%)', 'SRL (1.20%)', 'AFP patr. (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes empleador', 'Total costo empresa'];
+    const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfsPatronal, r.iessl, r.srl, r.afpPatronal, r.infotep, r.aporEmpleador, r.totalEmpresa]);
+    const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfsPatronal, data.totales.iessl, data.totales.srl, data.totales.afpPatronal, data.totales.infotep, data.totales.aporEmpleador, data.totales.totalEmpresa];
+    return saveReportExcel('Guardar Gastos de la empresa', `gastos_empresa_${data.anio}.xlsx`, data.anio,
+      headers, rows, footer, 'reportes:gastos-empresa-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+  }));
+
+  ipcMain.handle('reportes:riesgos-laborales-excel', wrap(async (e, { anio } = {}) => {
+    const data = reporteRiesgosLaborales(anio);
+    const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'Base riesgos laborales', 'Aporte SRL (1.20%)'];
+    const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.base, r.srl]);
+    const footer = ['', 'TOTAL', data.totales.bruto, data.totales.base, data.totales.srl];
+    return saveReportExcel('Guardar Riesgos laborales', `riesgos_laborales_${data.anio}.xlsx`, data.anio,
+      headers, rows, footer, 'reportes:riesgos-laborales-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
   }));
 }
 

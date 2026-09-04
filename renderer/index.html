@@ -184,6 +184,8 @@
           </div>
           <div class="view-actions">
             <input id="search-input" type="search" placeholder="Buscar por cédula, nombre, profesión…" />
+            <input id="emp-fecha-desde" type="date" title="Filtras por fecha de ingreso: desde" />
+            <input id="emp-fecha-hasta" type="date" title="Filtras por fecha de ingreso: hasta" />
             <button class="btn btn-ghost hidden" id="btn-export-cedulas-pdf" title="Descargar un PDF con las cédulas de todos los empleados activos">PDF cédulas</button>
             <button class="btn btn-ghost hidden" id="btn-import-excel-header" title="Importar empleados desde Excel">📤 Importar</button>
             <button class="btn btn-primary hidden" id="btn-new-employee">+ Nuevo registro</button>
@@ -241,6 +243,8 @@
           </div>
           <div class="view-actions">
             <input id="search-inactive" type="search" placeholder="Buscar en inactivos…" />
+            <input id="inac-fecha-desde" type="date" title="Filtras por fecha de baja: desde" />
+            <input id="inac-fecha-hasta" type="date" title="Filtras por fecha de baja: hasta" />
             <button class="btn btn-ghost" id="btn-historial-finiquitos">Historial de finiquitos</button>
             <button class="btn btn-primary" id="btn-inactivos-excel">Exportar Excel</button>
           </div>
@@ -293,11 +297,27 @@
               <option value="semanal">Semanal</option>
               <option value="diario">Diario</option>
             </select>
+            <select id="nomina-quincena" title="Quincena" class="hidden">
+              <option value="1">1ra quincena</option>
+              <option value="2">2da quincena</option>
+            </select>
             <button class="btn btn-primary" id="btn-nomina-calcular">Calcular nómina</button>
             <button class="btn btn-primary" id="btn-nomina-regalia">🎄 Regalía (sueldo 13)</button>
             <button class="btn btn-ghost" id="btn-nomina-csv">Exportar Excel</button>
+            <button class="btn btn-ghost" id="btn-nomina-dept-cat" title="Clasificar departamentos (oficina/técnico)">🏷 Depts</button>
           </div>
         </header>
+        <div class="card extra-card hidden" id="dept-cat-card">
+          <div class="extra-card-head">
+            <strong>Categorías de departamentos — <span class="muted">oficina → técnico</span></strong>
+            <span class="muted">Escriba una línea por departamento: <code>Departamento=oficina</code> o <code>Departamento=tecnico</code>. Los departamentos sin asignar se clasifican automáticamente por su nombre. Ordena la nómina de oficina a técnico (pantalla y Excel).</span>
+          </div>
+          <textarea id="dept-cat-input" rows="6" placeholder="Administración=oficina&#10;Mantenimiento=tecnico" style="width:100%;font-family:monospace"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <button class="btn btn-primary btn-sm" id="btn-dept-cat-save">Guardar</button>
+            <button class="btn btn-danger btn-sm" id="btn-dept-cat-clear">Quitar todas (solo automático)</button>
+          </div>
+        </div>
         <div class="card extra-card hidden" id="extra-card">
           <div class="extra-card-head">
             <strong>Horas extra y feriados — <span id="extra-emp-name"></span></strong>
@@ -312,6 +332,9 @@
             </label>
             <label>Otros ingresos (RD$)
               <input id="he-otros" type="number" min="0" step="0.01" value="0" placeholder="0.00" />
+            </label>
+            <label>Transporte (RD$, opcional)
+              <input id="he-transporte" type="number" min="0" step="0.01" value="0" placeholder="0.00" />
             </label>
             <input id="he-nota" type="text" placeholder="Nota (opcional)" style="flex:1;min-width:160px" />
             <button class="btn btn-primary btn-sm" id="btn-he-save">Guardar y recalcular</button>
@@ -460,8 +483,10 @@
             <button class="btn btn-primary" id="btn-rep-cumpleanos">Cumpleaños</button>
             <select id="rep-mes" title="Mes de cumpleaños"></select>
             <button class="btn btn-primary" id="btn-rep-deptos">Departamentos</button>
-            <select id="rep-anio" title="Año para el reporte fiscal 609 (Planilla de pago)"></select>
-            <button class="btn btn-primary" id="btn-rep-609">🧾 Reporte 609</button>
+            <select id="rep-anio" title="Año para los reportes de gastos y riesgos laborales"></select>
+            <button class="btn btn-primary" id="btn-rep-gastos-empleado">💳 Gastos del empleado</button>
+            <button class="btn btn-primary" id="btn-rep-gastos-empresa">🏢 Gastos de la empresa</button>
+            <button class="btn btn-primary" id="btn-rep-riesgos">⚠️ Riesgos laborales</button>
             <button class="btn btn-primary" id="btn-rep-nomina-deptos">💰 Costo por depto.</button>
             <button class="btn btn-primary" id="btn-rep-cedulas">Cédulas por vencer</button>
             <button class="btn btn-primary" id="btn-rep-beneficios">Beneficios</button>
@@ -707,7 +732,7 @@
 
         <div class="card">
           <h3>📄 Modelos de documentos</h3>
-          <p class="muted small">Las cartas se generan con las plantillas integradas del sistema. Aquí defina la <strong>empresa</strong> (razón social, dirección y contacto), el <strong>destinatario</strong> (banco o persona) y el <strong>firmante</strong> de las cartas. La constancia y la carta de salario comparten el mismo formato; la solicitud de cuenta de nómina usa el modelo del banco.</p>
+          <p class="muted small">Las cartas se generan con las plantillas integradas del sistema. Aquí defina la <strong>empresa</strong> (razón social, dirección y contacto), el <strong>destinatario</strong> (banco o persona) y el <strong>firmante</strong> de las cartas. La carta de trabajo y la carta de salario comparten el mismo formato; la solicitud de cuenta de nómina usa el modelo del banco.</p>
 
           <div id="doc-settings" class="form-stack" style="margin-top:12px">
             <div class="form-row">
@@ -771,7 +796,7 @@
             </div>
 
             <details>
-              <summary class="muted small">Texto de la constancia de trabajo generada (usa marcadores {{…}})</summary>
+              <summary class="muted small">Texto de la carta de trabajo generada (usa marcadores {{…}})</summary>
               <textarea id="doc-constancia-text" rows="5" placeholder="Hacemos constar que {{nombre_completo}}, portador(a) de la cédula No. {{cedula}}, labora en esta empresa desde el {{fecha_ingreso}} desempeñándose en el puesto de {{puesto}}. Se expide la presente a solicitud de la parte interesada."></textarea>
             </details>
             <details>
@@ -792,7 +817,7 @@
 
         <div class="card">
           <h3>📄 Documentos internos</h3>
-          <p class="muted small">Constancia de trabajo y carta de salario de cada empleado. También están disponibles desde el expediente del empleado.</p>
+          <p class="muted small">Carta de trabajo y carta de salario de cada empleado. También están disponibles desde el expediente del empleado.</p>
         </div>
       </section>
     </main>
@@ -816,7 +841,7 @@
           <button class="btn btn-ghost" id="btn-load-back">Cargar reverso</button>
           <button class="btn btn-ghost" id="btn-swap-sides" title="Intercambiar las vistas previas de frente y reverso">⟲ Cambiar lado</button>
           <button class="btn btn-ghost" id="btn-export-cedula-pdf" title="Descargar la cédula en PDF">⬇ PDF cédula</button>
-          <button class="btn btn-ghost hidden" id="btn-export-constancia" title="Descargar constancia de trabajo">📄 Constancia</button>
+          <button class="btn btn-ghost hidden" id="btn-export-constancia" title="Descargar carta de trabajo">📄 Carta de trabajo</button>
           <button class="btn btn-ghost hidden" id="btn-export-carta-salario" title="Descargar carta de salario">💵 Carta salario</button>
           <button class="btn btn-ghost hidden" id="btn-export-solicitud" title="Descargar solicitud de cuenta de nómina">🏦 Solicitud nómina</button>
           <select id="sel-export-format" class="hidden" title="Formato de exportación de documentos">

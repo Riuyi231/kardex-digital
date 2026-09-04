@@ -438,7 +438,7 @@ async function buildConstancia(emp, opts = {}) {
   const page = doc.addPage(PageSizes.A4);
   const W = 595, H = 842, M = 56;
   const name = `${emp.nombres || ''} ${emp.apellidos || ''}`.trim() || 'Empleado';
-  let y = drawLetterHeader(page, doc, opts, font, bold, rgb, W, M, H, 'CONSTANCIA DE TRABAJO');
+  let y = drawLetterHeader(page, doc, opts, font, bold, rgb, W, M, H, 'CARTA DE TRABAJO');
   if (opts.recipient) {
     page.drawText('A: ' + opts.recipient, { x: M, y: y, size: 11, font, color: c(rgb, 'dark') });
     y -= 22;

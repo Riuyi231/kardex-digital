@@ -7,6 +7,28 @@ const DIAS_MES = 23.83;
 const AFP_EMP = 0.0287; // aporte empleado AFP (2.87%)
 const SFS_EMP = 0.0304; // aporte empleado SFS (3.04%)
 
+// Aportes patronales TSS (República Dominicana, referenciales). Ajustables.
+const SFS_PATRONAL = 0.0709; // SFS/ARS a cargo del empleador (7.09%)
+const IESSL = 0.0040;        // Fondo de vivienda / educación superior (0.40%, base SFS)
+const SRL = 0.0120;          // Seguro de Riesgos Laborales, empleador (1.20%, base SFS)
+const AFP_PATRONAL = 0.0710; // AFP a cargo del empleador (7.10%)
+const INFOTEP = 0.0100;      // INFOTEP (1.00%, sobre salario total sin tope)
+
+// Aportes patronales TSS sobre el salario bruto de un empleado en un período.
+// Usa las mismas bases topadas que las retenciones del empleado.
+function calcAportesPatronales(bruto) {
+  const b = round2(Number(bruto) || 0);
+  const baseAFP = Math.min(b, AFP_TOPE);
+  const baseSFS = Math.min(b, SFS_TOPE);
+  return {
+    sfsPatronal: round2(baseSFS * SFS_PATRONAL),
+    iessl: round2(baseSFS * IESSL),
+    srl: round2(baseSFS * SRL),
+    afpPatronal: round2(baseAFP * AFP_PATRONAL),
+    infotep: round2(b * INFOTEP)
+  };
+}
+
 // Salario mínimo mensual referencial vigente (RD 2025-2026, sectorizado). Ajustable.
 const SALARIO_MINIMO = 23223;
 const AFP_TOPE = 20 * SALARIO_MINIMO; // tope cotizable AFP: 20 SMN = RD$ 464,460.00
@@ -113,11 +135,12 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
   const pagoFeriados = round2(salarioHora(sm) * feriadosExtra * 2);
   const extra = round2(pagoHoras + pagoDomingos + pagoFeriados);
   const otrosIngresos = round2(Number(ex.otros_ingresos) || 0);
+  const transporte = round2(Number(ex.transporte) || 0);
   const incentivo = round2((incentivos[emp.id] || []).reduce((sum, i) => sum + (Number(i.monto) || 0), 0));
   const pv = pagosVacaciones[emp.id] || null;
   const vacacionDias = pv ? Number(pv.dias) || 0 : 0;
   const vacacionPago = pv ? round2(Number(pv.monto) || 0) : 0;
-  const bruto = round2(sm + extra + otrosIngresos + incentivo + vacacionPago);
+  const bruto = round2(sm + extra + otrosIngresos + transporte + incentivo + vacacionPago);
   const baseAFP = Math.min(bruto, AFP_TOPE);
   const baseSFS = Math.min(bruto, SFS_TOPE);
   const afp = round2(baseAFP * AFP_EMP);
@@ -128,7 +151,7 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
   const neto = round2(bruto - retenciones);
   return {
     salario: sm, horasExtra, domingosExtra, feriadosExtra, pagoHoras, pagoDomingos, pagoFeriados,
-    extra, otrosIngresos, incentivo, vacacionDias, vacacionPago, bruto, afp, sfs, isr, retenciones, neto
+    extra, otrosIngresos, transporte, incentivo, vacacionDias, vacacionPago, bruto, afp, sfs, isr, retenciones, neto
   };
 }
 
@@ -191,7 +214,7 @@ function calcNomina(employees, mes, anio, extras = {}, incentivos = {}, pagosVac
 // `deduccionesManuales` es un mapa { employee_id: [{ monto, quincena }] } donde quincena: 0=todas, 1=primera, 2=segunda.
 function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {}, pagosVacaciones = {}, deduccionesManuales = {}) {
   const rows = [];
-  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, deducciones_manuales: 0, salario_mitad_total: 0, dm_q1_total: 0, dm_q2_total: 0, quincena2_neto: 0, neto: 0 };
+  const totales = { salario: 0, extra: 0, feriados: 0, otros_ingresos: 0, transporte: 0, incentivo: 0, vacaciones: 0, quincena1: 0, quincena2_bruto: 0, afp: 0, sfs: 0, isr: 0, retenciones: 0, deducciones_manuales: 0, salario_mitad_total: 0, dm_q1_total: 0, dm_q2_total: 0, quincena2_neto: 0, neto: 0 };
   for (const emp of employees || []) {
     const m = calcEmpleadoMes(emp, extras, incentivos, pagosVacaciones);
     if (!m) continue;
@@ -201,10 +224,12 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
     const dmQ2 = round2(dm.filter((d) => d.quincena === 2 || d.quincena === 0).reduce((s, d) => s + (Number(d.monto) || 0), 0));
     const totalDm = round2(dmQ1 + dmQ2);
     const q1 = round2(mitad - dmQ1);
-    const q2Bruto = round2(mitad + m.extra + m.otrosIngresos + m.incentivo + m.vacacionPago);
+    const q2Bruto = round2(mitad + m.extra + m.otrosIngresos + m.transporte + m.incentivo + m.vacacionPago);
     const ret = m.retenciones;
     const q2Neto = round2(q2Bruto - ret - dmQ2);
     const totalNeto = round2(q1 + q2Neto);
+    const tBrutoQ1 = round2(mitad + m.transporte);
+    const tBrutoQ2 = round2(mitad + m.extra + m.otrosIngresos + m.transporte + m.incentivo + m.vacacionPago);
     rows.push({
       id: emp.id,
       nombres: emp.nombres,
@@ -220,6 +245,9 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
       feriados_pago: m.pagoFeriados,
       extra: m.extra,
       otros_ingresos: m.otrosIngresos,
+      transporte: m.transporte,
+      total_bruto_q1: tBrutoQ1,
+      total_bruto_q2: tBrutoQ2,
       incentivo: m.incentivo,
       vacaciones_dias: m.vacacionDias,
       vacaciones_pago: m.vacacionPago,
@@ -243,6 +271,7 @@ function calcNominaQuincenal(employees, mes, anio, extras = {}, incentivos = {},
     totales.otros_ingresos += m.otrosIngresos;
     totales.incentivo += m.incentivo;
     totales.vacaciones += m.vacacionPago;
+    totales.transporte += m.transporte;
     totales.quincena1 += q1;
     totales.quincena2_bruto += q2Bruto;
     totales.afp += m.afp;
@@ -584,6 +613,7 @@ function nowIsoLike() {
 
 module.exports = {
   DIAS_MES, AFP_EMP, SFS_EMP, SALARIO_MINIMO, AFP_TOPE, SFS_TOPE,
+  SFS_PATRONAL, IESSL, SRL, AFP_PATRONAL, INFOTEP, calcAportesPatronales,
   round2, round1, parseDate, monthsBetween,
   salarioMensual, salarioDiario, salarioHora, calcISRAnual, calcISRMensual, calcNomina,
   calcNominaQuincenal, calcNominaSemanal, calcNominaDiaria, calcEmpleadoMes,

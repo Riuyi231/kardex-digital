@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   updateUser: (payload) => ipcRenderer.invoke('users:update', payload),
   deleteUser: (id) => ipcRenderer.invoke('users:delete', { id }),
 
-  listEmployees: (search, status) => ipcRenderer.invoke('employees:list', { search, status }),
+  listEmployees: (search, status, fecha_col, fecha_desde, fecha_hasta) => ipcRenderer.invoke('employees:list', { search, status, fecha_col, fecha_desde, fecha_hasta }),
   getStats: () => ipcRenderer.invoke('employees:stats'),
   setEmployeeStatus: (id, status, extra) => ipcRenderer.invoke('employees:setStatus', { id, status, extra }),
   getEmployee: (id) => ipcRenderer.invoke('employees:get', { id }),
@@ -112,8 +112,12 @@ contextBridge.exposeInMainWorld('api', {
 
   historialList: (employee_id) => ipcRenderer.invoke('historial:list', { employee_id }),
 
-  reporte609: (anio) => ipcRenderer.invoke('reportes:609', { anio }),
-  reporte609Excel: (anio) => ipcRenderer.invoke('reportes:609-excel', { anio }),
+  gastosEmpleado: (anio) => ipcRenderer.invoke('reportes:gastos-empleado', { anio }),
+  gastosEmpleadoExcel: (anio) => ipcRenderer.invoke('reportes:gastos-empleado-excel', { anio }),
+  gastosEmpresa: (anio) => ipcRenderer.invoke('reportes:gastos-empresa', { anio }),
+  gastosEmpresaExcel: (anio) => ipcRenderer.invoke('reportes:gastos-empresa-excel', { anio }),
+  riesgosLaborales: (anio) => ipcRenderer.invoke('reportes:riesgos-laborales', { anio }),
+  riesgosLaboralesExcel: (anio) => ipcRenderer.invoke('reportes:riesgos-laborales-excel', { anio }),
 
   docsGetSettings: () => ipcRenderer.invoke('docs:get-settings'),
   docsSaveSettings: (payload) => ipcRenderer.invoke('docs:save-settings', payload),

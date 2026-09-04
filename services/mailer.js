@@ -150,7 +150,7 @@ function buildNominaData(mes, anio, vista) {
   const m = Number(mes) || new Date().getMonth() + 1;
   const y = Number(anio) || new Date().getFullYear();
   const v = vista || 'mensual';
-  const actives = db.employees.list('', 'activo');
+  const actives = db.employees.list('', 'activo').filter((e) => !e.es_propietario);
   const extras = {};
   for (const ex of db.horasExtra.listForPeriod(m, y)) extras[ex.employee_id] = ex;
   const incentivos = {};

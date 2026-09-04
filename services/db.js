@@ -56,6 +56,7 @@ function migrate() {
       fecha_vencimiento TEXT NOT NULL DEFAULT '',
       nota TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'activo',
+      es_propietario INTEGER NOT NULL DEFAULT 0,
       fecha_baja TEXT NOT NULL DEFAULT '',
       salario REAL NOT NULL DEFAULT 0,
       tipo_salario TEXT NOT NULL DEFAULT 'mensual',
@@ -92,6 +93,7 @@ function migrate() {
       domingos_extra INTEGER NOT NULL DEFAULT 0,
       feriados_extra REAL NOT NULL DEFAULT 0,
       otros_ingresos REAL NOT NULL DEFAULT 0,
+      transporte REAL NOT NULL DEFAULT 0,
       deducciones REAL NOT NULL DEFAULT 0,
       nota TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -246,6 +248,7 @@ function ensureEmployeeColumns() {
     ['banco', "TEXT NOT NULL DEFAULT ''"],
     ['cuenta', "TEXT NOT NULL DEFAULT ''"],
     ['tipo_contrato', "TEXT NOT NULL DEFAULT ''"],
+    ['es_propietario', "INTEGER NOT NULL DEFAULT 0"],
     ['ars', "TEXT NOT NULL DEFAULT ''"],
     ['afp', "TEXT NOT NULL DEFAULT ''"],
     ['email', "TEXT NOT NULL DEFAULT ''"],
@@ -279,7 +282,8 @@ function ensureHorasExtraColumns() {
   const cols = new Set(all('PRAGMA table_info(horas_extra)').map((c) => c.name));
   const toAdd = [
     ['feriados_extra', 'REAL NOT NULL DEFAULT 0'],
-    ['otros_ingresos', 'REAL NOT NULL DEFAULT 0']
+    ['otros_ingresos', 'REAL NOT NULL DEFAULT 0'],
+    ['transporte', 'REAL NOT NULL DEFAULT 0']
   ];
   for (const [name, def] of toAdd) {
     if (!cols.has(name)) {
@@ -459,21 +463,29 @@ const users = {
 };
 
 const employees = {
-  list(search = '', status = '') {
+  list(search = '', status = '', opts = {}) {
     const q = String(search).trim();
     const base = `SELECT id, cedula, nombres, apellidos, sexo, fecha_nacimiento, estado_civil, profesion, puesto, departamento,
-        status, fecha_baja, salario, tipo_salario, fecha_ingreso, nss, ars, afp, email, telefono, flota, banco, cuenta, tipo_contrato,
+        status, es_propietario, fecha_baja, salario, tipo_salario, fecha_ingreso, nss, ars, afp, email, telefono, flota, banco, cuenta, tipo_contrato,
         created_at, updated_at, (frente IS NOT NULL AND frente != '') AS has_images,
         (SELECT COUNT(*) FROM liquidaciones WHERE liquidaciones.employee_id = employees.id) AS liquidaciones_count
         FROM employees`;
-    if (!q && !status) {
-      return all(`${base} ORDER BY apellidos, nombres`);
-    }
     const where = [];
     const params = [];
     if (q) { where.push('(cedula LIKE ? OR nombres LIKE ? OR apellidos LIKE ? OR lugar_nacimiento LIKE ? OR profesion LIKE ? OR puesto LIKE ? OR departamento LIKE ?)'); const like = `%${q}%`; params.push(like, like, like, like, like, like, like); }
     if (status) { where.push('status = ?'); params.push(status); }
-    return all(`${base} WHERE ${where.join(' AND ')} ORDER BY apellidos, nombres`, params);
+    const fc = (opts && opts.fecha_col) || '';
+    const desde = (opts && opts.fecha_desde) || '';
+    const hasta = (opts && opts.fecha_hasta) || '';
+    if (fc === 'fecha_ingreso' || fc === 'fecha_baja') {
+      const parts = [`TRIM(${fc}) != ''`];
+      if (desde) { parts.push(`substr(${fc},1,10) >= ?`); params.push(desde); }
+      if (hasta) { parts.push(`substr(${fc},1,10) <= ?`); params.push(hasta); }
+      where.push(`(${parts.join(' AND ')})`);
+    }
+    return all(where.length
+      ? `${base} WHERE ${where.join(' AND ')} ORDER BY apellidos, nombres`
+      : `${base} ORDER BY apellidos, nombres`, params);
   },
   get(id) {
     return get('SELECT * FROM employees WHERE id = ?', [id]);
@@ -519,18 +531,18 @@ const employees = {
       lugar_nacimiento: '', ciudad: '', estado_civil: '', profesion: '', tipo_sangre: '', puesto: '', departamento: '',
       sucursal: '',
       fecha_emision: '', fecha_vencimiento: '', nota: '',
-      salario: 0, tipo_salario: 'mensual', fecha_ingreso: '', nss: '', ars: '', afp: '', email: '', telefono: '', flota: '', banco: '', cuenta: '', tipo_contrato: ''
+       salario: 0, tipo_salario: 'mensual', fecha_ingreso: '', nss: '', ars: '', afp: '', email: '', telefono: '', flota: '', banco: '', cuenta: '', tipo_contrato: ''
     }, data || {});
     const now = nowIso();
     const r = run(`INSERT INTO employees
       (cedula, nombres, apellidos, sexo, fecha_nacimiento, nacionalidad, lugar_nacimiento, ciudad, estado_civil,
        profesion, tipo_sangre, puesto, departamento, sucursal, fecha_emision, fecha_vencimiento, nota,
-       salario, tipo_salario, fecha_ingreso, nss, ars, afp, email, telefono, flota, banco, cuenta, tipo_contrato,
+       salario, tipo_salario, fecha_ingreso, nss, ars, afp, email, telefono, flota, banco, cuenta, tipo_contrato, es_propietario,
        foto, frente, reverso, created_by, created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.cedula, d.nombres, d.apellidos, d.sexo, d.fecha_nacimiento, d.nacionalidad, d.lugar_nacimiento, d.ciudad, d.estado_civil,
        d.profesion, d.tipo_sangre, d.puesto, d.departamento, d.sucursal || '', d.fecha_emision, d.fecha_vencimiento, d.nota,
-       Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '',
+       Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '', d.es_propietario ? 1 : 0,
        d.foto || null, d.frente || null, d.reverso || null, userId || null, now, now]);
     const last = get('SELECT last_insert_rowid() AS id');
     const created = employees.get(last.id);
@@ -547,12 +559,12 @@ const employees = {
     run(`UPDATE employees SET
         cedula=?, nombres=?, apellidos=?, sexo=?, fecha_nacimiento=?, nacionalidad=?, lugar_nacimiento=?, ciudad=?, estado_civil=?,
         profesion=?, tipo_sangre=?, puesto=?, departamento=?, sucursal=?, fecha_emision=?, fecha_vencimiento=?, nota=?,
-        salario=?, tipo_salario=?, fecha_ingreso=?, nss=?, ars=?, afp=?, email=?, telefono=?, flota=?, banco=?, cuenta=?, tipo_contrato=?,
+        salario=?, tipo_salario=?, fecha_ingreso=?, nss=?, ars=?, afp=?, email=?, telefono=?, flota=?, banco=?, cuenta=?, tipo_contrato=?, es_propietario=?,
         foto=?, frente=?, reverso=?, updated_at=?
       WHERE id=?`,
       [d.cedula, d.nombres, d.apellidos, d.sexo, d.fecha_nacimiento, d.nacionalidad, d.lugar_nacimiento, d.ciudad, d.estado_civil,
        d.profesion, d.tipo_sangre, d.puesto, d.departamento, d.sucursal || '', d.fecha_emision, d.fecha_vencimiento, d.nota,
-       Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '',
+       Number(d.salario) || 0, d.tipo_salario || 'mensual', d.fecha_ingreso || '', d.nss || '', d.ars || '', d.afp || '', d.email || '', d.telefono || '', d.flota || '', d.banco || '', d.cuenta || '', d.tipo_contrato || '', (data && data.es_propietario !== undefined ? (data.es_propietario ? 1 : 0) : d.es_propietario ? 1 : 0),
        d.foto || null, d.frente || null, d.reverso || null, nowIso(), id]);
     if (Number(data && data.salario) && Number(data.salario) !== Number(u.salario)) {
       salarioHistorial.record(id, Number(data.salario), data.tipo_salario || u.tipo_salario, 'Cambio de salario', Number(u.salario));
@@ -580,7 +592,7 @@ const horasExtra = {
   listForPeriod(mes, anio) {
     return all('SELECT * FROM horas_extra WHERE mes = ? AND anio = ?', [Number(mes), Number(anio)]);
   },
-  save({ employee_id, mes, anio, horas_extra, domingos_extra, feriados_extra, otros_ingresos, nota }) {
+  save({ employee_id, mes, anio, horas_extra, domingos_extra, feriados_extra, otros_ingresos, transporte, nota }) {
     const id = Number(employee_id);
     const m = Number(mes);
     const a = Number(anio);
@@ -590,16 +602,17 @@ const horasExtra = {
     const de = Number(domingos_extra) || 0;
     const fe = Number(feriados_extra) || 0;
     const oi = Number(otros_ingresos) || 0;
+    const tr = Number(transporte) || 0;
     const nt = String(nota || '');
     const now = nowIso();
     if (existing) {
-      run('UPDATE horas_extra SET horas_extra = ?, domingos_extra = ?, feriados_extra = ?, otros_ingresos = ?, nota = ?, updated_at = ? WHERE id = ?',
-        [he, de, fe, oi, nt, now, existing.id]);
-      return { id: existing.id, employee_id: id, mes: m, anio: a, horas_extra: he, domingos_extra: de, feriados_extra: fe, otros_ingresos: oi, nota: nt };
+      run('UPDATE horas_extra SET horas_extra = ?, domingos_extra = ?, feriados_extra = ?, otros_ingresos = ?, transporte = ?, nota = ?, updated_at = ? WHERE id = ?',
+        [he, de, fe, oi, tr, nt, now, existing.id]);
+      return { id: existing.id, employee_id: id, mes: m, anio: a, horas_extra: he, domingos_extra: de, feriados_extra: fe, otros_ingresos: oi, transporte: tr, nota: nt };
     }
-    run('INSERT INTO horas_extra (employee_id, mes, anio, horas_extra, domingos_extra, feriados_extra, otros_ingresos, nota, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [id, m, a, he, de, fe, oi, nt, now, now]);
-    return { id: get('SELECT last_insert_rowid() AS id').id, employee_id: id, mes: m, anio: a, horas_extra: he, domingos_extra: de, feriados_extra: fe, otros_ingresos: oi, nota: nt };
+    run('INSERT INTO horas_extra (employee_id, mes, anio, horas_extra, domingos_extra, feriados_extra, otros_ingresos, transporte, nota, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [id, m, a, he, de, fe, oi, tr, nt, now, now]);
+    return { id: get('SELECT last_insert_rowid() AS id').id, employee_id: id, mes: m, anio: a, horas_extra: he, domingos_extra: de, feriados_extra: fe, otros_ingresos: oi, transporte: tr, nota: nt };
   }
 };
 
