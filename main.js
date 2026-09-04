@@ -1285,8 +1285,9 @@ function registerIpc() {
   // RIESGOS LABORALES: aporte patronal SRL (1.20%) sobre la base cotizable SFS.
   function reporteRiesgosLaborales(anio) {
     const { anio: y, rows } = reporteAnualEmpleados(anio);
+    for (const r of rows) r.base = r.baseSFS;
     const totales = rows.reduce((t, r) => {
-      t.bruto += r.bruto; t.base += r.baseSFS; t.srl += r.srl;
+      t.bruto += r.bruto; t.base += r.base; t.srl += r.srl;
       return t;
     }, { bruto: 0, base: 0, srl: 0 });
     for (const k of Object.keys(totales)) totales[k] = round2(totales[k]);
