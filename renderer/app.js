@@ -1130,7 +1130,7 @@
         else if (tipo === 'diario') salMensual = salBase * 23.83;
         else if (tipo === 'por_hora') salMensual = salBase * 192;
         const horaNormal = salMensual / (23.83 * 8);
-        const horaExtra = horaNormal * 2;
+        const horaExtra = horaNormal * 1.5;
         const diaFeriado = (salMensual / 23.83) * 2;
         $('ev-salario').textContent = fmtRD(salMensual);
         $('ev-hora').textContent = fmtRD(horaNormal);

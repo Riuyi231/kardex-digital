@@ -132,7 +132,7 @@ function calcEmpleadoMes(emp, extras = {}, incentivos = {}, pagosVacaciones = {}
   const feriadosExtra = Number(ex.feriados_extra) || 0;
   const pagoHoras = round2(salarioHora(sm) * horasExtra * 1.5);
   const pagoDomingos = round2(salarioDiario(sm) * domingosExtra * 2);
-  const pagoFeriados = round2(salarioHora(sm) * feriadosExtra * 2);
+  const pagoFeriados = round2(salarioDiario(sm) * feriadosExtra * 2);
   const extra = round2(pagoHoras + pagoDomingos + pagoFeriados);
   const otrosIngresos = round2(Number(ex.otros_ingresos) || 0);
   const transporte = round2(Number(ex.transporte) || 0);
