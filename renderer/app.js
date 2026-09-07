@@ -2000,7 +2000,7 @@
           <td>${esc(r.puesto || '')}</td>
           <td>${esc(r.departamento || '')}</td>
           <td class="num">${fmtRD(r.salario)}</td>
-          <td class="num">${(Number(r.meses) || 0).toLocaleString('es-DO', { maximumFractionDigits: 2 })}</td>
+          <td class="num">${fmtRD(r.devengado != null ? r.devengado : r.salario * (Number(r.meses) || 0))}</td>
           <td class="num"><strong>${fmtRD(r.regalia)}</strong></td>
           <td>${cambiosHtml}</td>
         </tr>`;
@@ -2021,13 +2021,13 @@
     }
     return doExportExcel(`regalia_${lastRegalia.anio}`, [{
       name: 'Regalía pascual',
-      headers: ['Empleado', 'Cédula', 'Puesto', 'Departamento', 'Salario', 'Meses', 'Regalía', 'Cambios salario'],
+      headers: ['Empleado', 'Cédula', 'Puesto', 'Departamento', 'Salario', 'Devengado (año)', 'Regalía (1/12)', 'Cambios salario'],
       rows: lastRegalia.rows.map(r => {
         const cambiosStr = (r.cambios || []).map(c => {
           const f = c.fecha ? new Date(c.fecha).toLocaleDateString('es-DO') : '';
           return f + ': ' + fmtRD(c.anterior) + ' → ' + fmtRD(c.nuevo) + (c.motivo ? ' (' + c.motivo + ')' : '');
         }).join('; ');
-        return [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.meses, r.regalia, cambiosStr];
+        return [r.nombres + ' ' + r.apellidos, r.cedula, r.puesto, r.departamento, r.salario, r.devengado != null ? r.devengado : r.salario * (Number(r.meses) || 0), r.regalia, cambiosStr];
       }),
       footer: ['TOTALES', '', '', '', '', '', lastRegalia.total, '']
     }]);

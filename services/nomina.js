@@ -501,35 +501,110 @@ function regaliaPascual(salarioMensualVal, fechaIngreso, fechaSalida) {
   return round2(sm * (t.months + (t.days + 1) / a) / 12);
 }
 
+// Devengado de salario ordinario entre dos fechas (año calendario).
+// Reglas (Art. 219 Código de Trabajo RD, Ley 16-92, + Regl. 139-98):
+//   - Cada mes calendario completamente transcurrido equivale a 1 salario mensual.
+//   - El mes incompleto (fecha de corte en curso) se prorratea con el valor del día
+//     laboral = salario mensual ÷ 23.83 (divisor legal del MT).
+// Maneja cambios de salario: divide el período en tramos con el salario vigente.
+function devengadoTramo(desde, hasta, salarioMensualVal) {
+  const s = new Date(Math.min(parseDate(desde).getTime(), parseDate(hasta).getTime()));
+  const e = new Date(Math.max(parseDate(desde).getTime(), parseDate(hasta).getTime()));
+  const sm = Number(salarioMensualVal) || 0;
+  if (sm <= 0 || e < s) return 0;
+  const ultimoDia = (y, m) => new Date(y, m + 1, 0).getDate();
+
+  const mismoMes = s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth();
+  const esInicioMes = s.getDate() === 1;
+  const esFinMes = e.getDate() === ultimoDia(e.getFullYear(), e.getMonth());
+
+  let total = 0;
+  if (mismoMes) {
+    if (esInicioMes && esFinMes) {
+      total = sm; // mes completo
+    } else {
+      const dias = Math.round((e - s) / 86400000) + 1;
+      total = (sm / DIAS_MES) * dias;
+    }
+  } else {
+    // Mes inicial
+    if (esInicioMes) {
+      total += sm;
+    } else {
+      const finM1 = new Date(s.getFullYear(), s.getMonth() + 1, 0);
+      const dias = Math.round((finM1 - s) / 86400000) + 1;
+      total += (sm / DIAS_MES) * dias;
+    }
+    // Meses completos intermedios
+    let m = s.getMonth() + 1;
+    let yy = s.getFullYear();
+    const ultra = e.getFullYear() * 12 + e.getMonth();
+    while (yy * 12 + m < ultra) {
+      total += sm;
+      m += 1;
+      if (m > 11) { m = 0; yy += 1; }
+    }
+    // Mes final
+    if (esFinMes) {
+      total += sm;
+    } else {
+      total += (sm / DIAS_MES) * e.getDate();
+    }
+  }
+  return total;
+}
+
+// Devengado ordinario total del año calendario hasta la fecha de corte, reconstruido
+// tramo a tramo según el historial real de salarios (maneja aumentos/bajas).
+function devengadoAnual(salarioMensualVal, fechaIngreso, fechaCorte, listaCambios) {
+  const corte = parseDate(fechaCorte);
+  if (!corte) return 0;
+  const ing = parseDate(fechaIngreso);
+  const ini = new Date(corte.getFullYear(), 0, 1); // 1-ene del año de corte
+  const inicio = ing && ing > ini ? new Date(ing) : ini;
+  let salario = Number(salarioMensualVal) || 0;
+  let devengado = 0;
+  let cursor = new Date(inicio);
+
+  const cambios = (listaCambios || [])
+    .map((ch) => ({ fecha: parseDate(ch.fecha_cambio || ch.fecha), salario: Number(ch.salario != null ? ch.salario : ch.nuevo) }))
+    .filter((c) => c.fecha && c.salario > 0 && c.fecha > cursor && c.fecha <= corte)
+    .sort((a, b) => a.fecha - b.fecha);
+
+  for (const c of cambios) {
+    if (c.fecha > cursor) {
+      devengado += devengadoTramo(cursor, new Date(c.fecha.getTime() - 1), salario);
+      cursor = new Date(c.fecha);
+    }
+    salario = c.salario;
+  }
+  if (corte >= cursor) {
+    devengado += devengadoTramo(cursor, corte, salario);
+  }
+  return devengado;
+}
+
 // Regalía pascual ("sueldo 13") de toda la plantilla para un año.
-// Período: 1 dic del año anterior al 30 nov del año indicado (Art. 219).
-// Si el salario cambió durante el año, usa el salario promedio ponderado por meses.
+// Conforme al Art. 219 Código de Trabajo RD (Ley 16-92): la duodécima parte (1/12) de
+// los salarios ordinarios devengados en el AÑO CALENDARIO (1-ene a 31-dic), proporcional
+// a la fecha de cálculo si el año está en curso. Base: salario ordinario devengado real
+// (reconstruido por historial), con divisor legal 23.83 para el mes incompleto.
 function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn) {
   const y = Number(anio) || new Date().getFullYear();
-  const inicioPeriodo = new Date(y - 1, 11, 1);
-  const finPeriodo = new Date(y, 10, 30);
   const hoy = new Date();
-  const fin = hoy < finPeriodo ? hoy : finPeriodo;
+  const fechaCorte = new Date(Math.min(hoy.getTime(), new Date(y, 11, 31).getTime()));
   const rows = [];
   let total = 0;
   for (const emp of employees || []) {
-    let sm = round2(salarioMensual(emp.salario, emp.tipo_salario));
+    const sm = round2(salarioMensual(emp.salario, emp.tipo_salario));
     if (sm <= 0) continue;
-    if (salarioHistorialFn) {
-      const promedio = salarioHistorialFn(emp.id, y);
-      if (promedio && promedio > 0) sm = round2(promedio);
-    }
-    const ing = parseDate(emp.fecha_ingreso);
-    const ini = ing && ing > inicioPeriodo ? ing : inicioPeriodo;
-    const meses = Math.max(0, monthsBetween(ini, fin));
-    const monto = round2(sm * meses / 12);
 
     let cambios = [];
     if (salarioHistorialListFn) {
       const allChanges = salarioHistorialListFn(emp.id);
-      for (const ch of allChanges) {
+      for (const ch of allChanges || []) {
         const fc = parseDate(ch.fecha_cambio);
-        if (fc && fc >= inicioPeriodo && fc <= finPeriodo) {
+        if (fc && fc >= new Date(y, 0, 1) && fc <= fechaCorte) {
           cambios.push({
             fecha: ch.fecha_cambio,
             anterior: round2(ch.salario_anterior),
@@ -540,6 +615,10 @@ function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn
       }
     }
 
+    const devengado = devengadoAnual(sm, emp.fecha_ingreso, fechaCorte, cambios);
+    const monto = round2(devengado / 12);
+    const dias = Math.max(1, Math.round((fechaCorte - new Date(y, 0, 1)) / 86400000) + 1);
+
     rows.push({
       id: emp.id,
       nombres: emp.nombres,
@@ -548,7 +627,9 @@ function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn
       puesto: emp.puesto,
       departamento: emp.departamento,
       salario: sm,
-      meses: round2(meses),
+      meses: round2(devengado > 0 ? devengado / sm : 0),
+      devengado: round2(devengado),
+      dias,
       regalia: monto,
       cambios
     });
@@ -556,7 +637,7 @@ function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn
   }
   return {
     anio: y,
-    periodo: `dic ${y - 1} – nov ${y}`,
+    periodo: `Año ${y} (01-ene al ${fechaCorte.toLocaleDateString('es-DO')})`,
     rows,
     total: round2(total)
   };
