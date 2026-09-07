@@ -554,26 +554,36 @@ function devengadoTramo(desde, hasta, salarioMensualVal) {
   return total;
 }
 
+// Trunca una fecha a medianoche (solo día calendario), evitando que las fracciones
+// de hora provoquen errores de redondeo de días (p. ej. restar "1 ms" al buscar el
+// día anterior daba 4.999... días).
+function aMedianoche(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 // Devengado ordinario total del año calendario hasta la fecha de corte, reconstruido
 // tramo a tramo según el historial real de salarios (maneja aumentos/bajas).
-function devengadoAnual(salarioMensualVal, fechaIngreso, fechaCorte, listaCambios) {
-  const corte = parseDate(fechaCorte);
+// `salarioMensualVal` es el salario ya convertido a mensual; los cambios en el
+// historial están en la unidad original del empleado (diario/semanal/quincenal), por
+// lo que también se convierten con `tipoSalario` para mantener coherencia de unidades.
+function devengadoAnual(salarioMensualVal, fechaIngreso, fechaCorte, listaCambios, tipoSalario) {
+  const corte = aMedianoche(parseDate(fechaCorte));
   if (!corte) return 0;
   const ing = parseDate(fechaIngreso);
   const ini = new Date(corte.getFullYear(), 0, 1); // 1-ene del año de corte
-  const inicio = ing && ing > ini ? new Date(ing) : ini;
+  const inicio = ing && ing > ini ? aMedianoche(ing) : ini;
   let salario = Number(salarioMensualVal) || 0;
   let devengado = 0;
   let cursor = new Date(inicio);
 
   const cambios = (listaCambios || [])
-    .map((ch) => ({ fecha: parseDate(ch.fecha_cambio || ch.fecha), salario: Number(ch.salario != null ? ch.salario : ch.nuevo) }))
+    .map((ch) => { const f = parseDate(ch.fecha_cambio || ch.fecha); return { fecha: f ? aMedianoche(f) : null, salario: salarioMensual(ch.salario != null ? ch.salario : ch.nuevo, tipoSalario) }; })
     .filter((c) => c.fecha && c.salario > 0 && c.fecha > cursor && c.fecha <= corte)
     .sort((a, b) => a.fecha - b.fecha);
 
   for (const c of cambios) {
     if (c.fecha > cursor) {
-      devengado += devengadoTramo(cursor, new Date(c.fecha.getTime() - 1), salario);
+      devengado += devengadoTramo(cursor, new Date(c.fecha.getFullYear(), c.fecha.getMonth(), c.fecha.getDate() - 1), salario);
       cursor = new Date(c.fecha);
     }
     salario = c.salario;
@@ -615,7 +625,7 @@ function calcRegalia(employees, anio, salarioHistorialFn, salarioHistorialListFn
       }
     }
 
-    const devengado = devengadoAnual(sm, emp.fecha_ingreso, fechaCorte, cambios);
+    const devengado = devengadoAnual(sm, emp.fecha_ingreso, fechaCorte, cambios, emp.tipo_salario);
     const monto = round2(devengado / 12);
     const dias = Math.max(1, Math.round((fechaCorte - new Date(y, 0, 1)) / 86400000) + 1);
 
