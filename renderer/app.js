@@ -2051,6 +2051,17 @@
       const now = new Date().getFullYear();
       anio.innerHTML = [now - 1, now, now + 1].map((y) => `<option value="${y}" ${y === now ? 'selected' : ''}>${y}</option>`).join('');
     }
+    const periodo = $('rep-periodo');
+    if (periodo && periodo.options.length === 0) {
+      const now = new Date().getMonth();
+      periodo.innerHTML = `<option value="0">Anual (todo el año)</option>` +
+        MESES_ES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+    }
+  }
+
+  function reportPeriodo() {
+    const v = Number($('rep-periodo') && $('rep-periodo').value) || 0;
+    return { mes: v > 0 ? v : null };
   }
 
   function renderReport(title, headers, rows, emptyMsg, kind) {
@@ -2205,8 +2216,10 @@
 
   async function loadGastosEmpleado() {
     const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    const { mes } = reportPeriodo();
+    const periodo = mes ? `${MESES_ES[mes - 1]} ${anio}` : String(anio);
     try {
-      const res = await window.api.gastosEmpleado(anio);
+      const res = await window.api.gastosEmpleado(anio, mes);
       if (!res.ok) throw new Error(res.error);
       const data = res.data;
       const rows = data.rows.map(r => [
@@ -2216,15 +2229,17 @@
       if (data.rows.length) {
         rows.push(['', 'TOTALES', fmtRD(data.totales.bruto), fmtRD(data.totales.sfs), fmtRD(data.totales.afp), fmtRD(data.totales.isr), fmtRD(data.totales.retenciones)]);
       }
-      renderReport(`Gastos del empleado ${anio}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS (3.04%)', 'AFP (2.87%)', 'ISR (progresivo)', 'Total retenciones'],
-        rows, 'No hay retenciones registradas para ' + anio + '.', 'gastos-empleado');
+      renderReport(`Gastos del empleado ${periodo}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS (3.04%)', 'AFP (2.87%)', 'ISR (progresivo)', 'Total retenciones'],
+        rows, 'No hay retenciones registradas para ' + periodo + '.', 'gastos-empleado');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function loadGastosEmpresa() {
     const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    const { mes } = reportPeriodo();
+    const periodo = mes ? `${MESES_ES[mes - 1]} ${anio}` : String(anio);
     try {
-      const res = await window.api.gastosEmpresa(anio);
+      const res = await window.api.gastosEmpresa(anio, mes);
       if (!res.ok) throw new Error(res.error);
       const data = res.data;
       const rows = data.rows.map(r => [
@@ -2237,15 +2252,17 @@
           fmtRD(data.totales.srl), fmtRD(data.totales.afpPatronal), fmtRD(data.totales.infotep),
           fmtRD(data.totales.aporEmpleador), fmtRD(data.totales.totalEmpresa)]);
       }
-      renderReport(`Gastos de la empresa ${anio}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'Salud (7.09%)', 'SRL (1.20%)', 'Pensión (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes', 'Total costo empresa'],
-        rows, 'No hay datos para ' + anio + '.', 'gastos-empresa');
+      renderReport(`Gastos de la empresa ${periodo}`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'Salud (7.09%)', 'SRL (1.20%)', 'Pensión (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes', 'Total costo empresa'],
+        rows, 'No hay datos para ' + periodo + '.', 'gastos-empresa');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function loadRiesgosLaborales() {
     const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    const { mes } = reportPeriodo();
+    const periodo = mes ? `${MESES_ES[mes - 1]} ${anio}` : String(anio);
     try {
-      const res = await window.api.riesgosLaborales(anio);
+      const res = await window.api.riesgosLaborales(anio, mes);
       if (!res.ok) throw new Error(res.error);
       const data = res.data;
       const rows = data.rows.map(r => [
@@ -2255,16 +2272,17 @@
       if (data.rows.length) {
         rows.push(['', 'TOTALES', fmtRD(data.totales.bruto), fmtRD(data.totales.base), fmtRD(data.totales.srl)]);
       }
-      renderReport(`Riesgos laborales ${anio} · Aporte SRL (1.20%)`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'Base riesgos laborales', 'Aporte SRL (1.20%)'],
-        rows, 'No hay datos para ' + anio + '.', 'riesgos-laborales');
+      renderReport(`Riesgos laborales ${periodo} · Aporte SRL (1.20%)`, ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'Base riesgos laborales', 'Aporte SRL (1.20%)'],
+        rows, 'No hay datos para ' + periodo + '.', 'riesgos-laborales');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function exportReportExcel() {
     const anio = Number($('rep-anio').value) || new Date().getFullYear();
+    const { mes } = reportPeriodo();
     if (lastReportKind === 'gastos-empleado') {
       try {
-        const res = await window.api.gastosEmpleadoExcel(anio);
+        const res = await window.api.gastosEmpleadoExcel(anio, mes);
         if (!res.ok) throw new Error(res.error);
         if (res.data) toast('Excel guardado: ' + res.data, 'success', 5000);
       } catch (e) { toast(e.message, 'error'); }
@@ -2272,7 +2290,7 @@
     }
     if (lastReportKind === 'gastos-empresa') {
       try {
-        const res = await window.api.gastosEmpresaExcel(anio);
+        const res = await window.api.gastosEmpresaExcel(anio, mes);
         if (!res.ok) throw new Error(res.error);
         if (res.data) toast('Excel guardado: ' + res.data, 'success', 5000);
       } catch (e) { toast(e.message, 'error'); }
@@ -2280,7 +2298,7 @@
     }
     if (lastReportKind === 'riesgos-laborales') {
       try {
-        const res = await window.api.riesgosLaboralesExcel(anio);
+        const res = await window.api.riesgosLaboralesExcel(anio, mes);
         if (!res.ok) throw new Error(res.error);
         if (res.data) toast('Excel guardado: ' + res.data, 'success', 5000);
       } catch (e) { toast(e.message, 'error'); }

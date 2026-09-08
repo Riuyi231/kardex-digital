@@ -478,10 +478,10 @@ const employees = {
     const desde = (opts && opts.fecha_desde) || '';
     const hasta = (opts && opts.fecha_hasta) || '';
     if (fc === 'fecha_ingreso' || fc === 'fecha_baja') {
-      const parts = [`TRIM(${fc}) != ''`];
+      const parts = [];
       if (desde) { parts.push(`substr(${fc},1,10) >= ?`); params.push(desde); }
       if (hasta) { parts.push(`substr(${fc},1,10) <= ?`); params.push(hasta); }
-      where.push(`(${parts.join(' AND ')})`);
+      if (parts.length) where.push(`(${parts.join(' AND ')})`);
     }
     return all(where.length
       ? `${base} WHERE ${where.join(' AND ')} ORDER BY apellidos, nombres`

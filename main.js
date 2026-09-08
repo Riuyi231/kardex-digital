@@ -1220,12 +1220,13 @@ function registerIpc() {
   /* ============ Reportes de gastos (planilla) ============ */
 
   // Agregados anuales por empleado: retenciones (SFS/AFP/ISR) y aportes patronales TSS.
-  function reporteAnualEmpleados(anio) {
+  function reporteAnualEmpleados(anio, mes) {
     const y = Number(anio) || new Date().getFullYear();
+    const months = mes ? [Number(mes)] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const byId = {};
-    for (let mes = 1; mes <= 12; mes++) {
-      const { empList, extras, incentivos, pagosVacaciones } = nominaInputs(mes, y);
-      const r = nomina.calcNomina(empList, mes, y, extras, incentivos, pagosVacaciones);
+    for (const m of months) {
+      const { empList, extras, incentivos, pagosVacaciones } = nominaInputs(m, y);
+      const r = nomina.calcNomina(empList, m, y, extras, incentivos, pagosVacaciones);
       for (const row of r.rows) {
         if (!byId[row.id]) {
           byId[row.id] = { id: row.id, apellidos: row.apellidos, nombres: row.nombres, cedula: row.cedula,
@@ -1251,9 +1252,9 @@ function registerIpc() {
     return { anio: y, rows };
   }
 
-  // GASTOS DEL EMPLEADO (antes Reporte 609): planilla anual de retenciones por empleado.
-  function reporteGastosEmpleado(anio) {
-    const { anio: y, rows } = reporteAnualEmpleados(anio);
+  // GASTOS DEL EMPLEADO (antes Reporte 609): planilla anual o mensual de retenciones por empleado.
+  function reporteGastosEmpleado(anio, mes) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio, mes);
     rows.forEach((r) => { r.retenciones = round2(r.sfs + r.afp + r.isr); });
     const totales = rows.reduce((t, r) => {
       t.bruto += r.bruto; t.sfs += r.sfs; t.afp += r.afp; t.isr += r.isr; t.retenciones += r.retenciones;
@@ -1263,9 +1264,9 @@ function registerIpc() {
     return { anio: y, rows, totales };
   }
 
-  // GASTOS DE LA EMPRESA: costo patronal anual por empleado + totales.
-  function reporteGastosEmpresa(anio) {
-    const { anio: y, rows } = reporteAnualEmpleados(anio);
+  // GASTOS DE LA EMPRESA: costo patronal anual o mensual por empleado + totales.
+  function reporteGastosEmpresa(anio, mes) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio, mes);
     rows.forEach((r) => {
       r.aporEmpleador = round2(r.sfsPatronal + r.iessl + r.srl + r.afpPatronal + r.infotep);
       r.totalEmpresa = round2(r.bruto + r.aporEmpleador);
@@ -1283,8 +1284,8 @@ function registerIpc() {
   }
 
   // RIESGOS LABORALES: aporte patronal SRL (1.20%) sobre la base cotizable SFS.
-  function reporteRiesgosLaborales(anio) {
-    const { anio: y, rows } = reporteAnualEmpleados(anio);
+  function reporteRiesgosLaborales(anio, mes) {
+    const { anio: y, rows } = reporteAnualEmpleados(anio, mes);
     for (const r of rows) r.base = r.baseSFS;
     const totales = rows.reduce((t, r) => {
       t.bruto += r.bruto; t.base += r.base; t.srl += r.srl;
@@ -1294,19 +1295,19 @@ function registerIpc() {
     return { anio: y, rows, totales };
   }
 
-  ipcMain.handle('reportes:gastos-empleado', wrap((e, { anio } = {}) => {
+  ipcMain.handle('reportes:gastos-empleado', wrap((e, { anio, mes } = {}) => {
     requireRole(['admin', 'editor']);
-    return reporteGastosEmpleado(anio);
+    return reporteGastosEmpleado(anio, mes);
   }));
 
-  ipcMain.handle('reportes:gastos-empresa', wrap((e, { anio } = {}) => {
+  ipcMain.handle('reportes:gastos-empresa', wrap((e, { anio, mes } = {}) => {
     requireRole(['admin', 'editor']);
-    return reporteGastosEmpresa(anio);
+    return reporteGastosEmpresa(anio, mes);
   }));
 
-  ipcMain.handle('reportes:riesgos-laborales', wrap((e, { anio } = {}) => {
+  ipcMain.handle('reportes:riesgos-laborales', wrap((e, { anio, mes } = {}) => {
     requireRole(['admin', 'editor']);
-    return reporteRiesgosLaborales(anio);
+    return reporteRiesgosLaborales(anio, mes);
   }));
 
   async function saveReportExcel(title, defaultName, sheetName, headers, rows, footer, auditKey, auditDetail) {
@@ -1321,31 +1322,44 @@ function registerIpc() {
     return res.filePath;
   }
 
-  ipcMain.handle('reportes:gastos-empleado-excel', wrap(async (e, { anio } = {}) => {
-    const data = reporteGastosEmpleado(anio);
+  function nombreMes(m) {
+    const n = Number(m);
+    return ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][n - 1] || '';
+  }
+
+  function periodoLabel(anio, mes) {
+    return mes ? `${nombreMes(mes)} ${anio}` : String(anio);
+  }
+
+  function periodoFile(anio, mes) {
+    return mes ? `${anio}_${String(mes).padStart(2, '0')}` : String(anio);
+  }
+
+  ipcMain.handle('reportes:gastos-empleado-excel', wrap(async (e, { anio, mes } = {}) => {
+    const data = reporteGastosEmpleado(anio, mes);
     const headers = ['RNC / Cédula', 'Nombres', 'Salarios brutos', 'SFS (3.04%)', 'AFP (2.87%)', 'ISR (progresivo)', 'Total retenciones'];
     const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfs, r.afp, r.isr, r.retenciones]);
     const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfs, data.totales.afp, data.totales.isr, data.totales.retenciones];
-    return saveReportExcel('Guardar Gastos del empleado', `gastos_empleado_${data.anio}.xlsx`, data.anio,
-      headers, rows, footer, 'reportes:gastos-empleado-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+    return saveReportExcel('Guardar Gastos del empleado', `gastos_empleado_${periodoFile(data.anio, mes)}.xlsx`, periodoLabel(data.anio, mes),
+      headers, rows, footer, 'reportes:gastos-empleado-excel', `${periodoLabel(data.anio, mes)} · ${data.rows.length} empleados`);
   }));
 
-  ipcMain.handle('reportes:gastos-empresa-excel', wrap(async (e, { anio } = {}) => {
-    const data = reporteGastosEmpresa(anio);
+  ipcMain.handle('reportes:gastos-empresa-excel', wrap(async (e, { anio, mes } = {}) => {
+    const data = reporteGastosEmpresa(anio, mes);
     const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'Salud (7.09%)', 'SRL (1.20%)', 'Pensión (7.10%)', 'INFOTEP (1.00%)', 'Subtotal aportes empleador', 'Total costo empresa'];
     const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.sfsPatronal, r.srl, r.afpPatronal, r.infotep, r.aporEmpleador, r.totalEmpresa]);
     const footer = ['', 'TOTAL', data.totales.bruto, data.totales.sfsPatronal, data.totales.srl, data.totales.afpPatronal, data.totales.infotep, data.totales.aporEmpleador, data.totales.totalEmpresa];
-    return saveReportExcel('Guardar Gastos de la empresa', `gastos_empresa_${data.anio}.xlsx`, data.anio,
-      headers, rows, footer, 'reportes:gastos-empresa-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+    return saveReportExcel('Guardar Gastos de la empresa', `gastos_empresa_${periodoFile(data.anio, mes)}.xlsx`, periodoLabel(data.anio, mes),
+      headers, rows, footer, 'reportes:gastos-empresa-excel', `${periodoLabel(data.anio, mes)} · ${data.rows.length} empleados`);
   }));
 
-  ipcMain.handle('reportes:riesgos-laborales-excel', wrap(async (e, { anio } = {}) => {
-    const data = reporteRiesgosLaborales(anio);
+  ipcMain.handle('reportes:riesgos-laborales-excel', wrap(async (e, { anio, mes } = {}) => {
+    const data = reporteRiesgosLaborales(anio, mes);
     const headers = ['RNC / Cédula', 'Nombres', 'Bruto anual', 'Base riesgos laborales', 'Aporte SRL (1.20%)'];
     const rows = data.rows.map((r) => [r.cedula, `${r.apellidos}, ${r.nombres}`, r.bruto, r.base, r.srl]);
     const footer = ['', 'TOTAL', data.totales.bruto, data.totales.base, data.totales.srl];
-    return saveReportExcel('Guardar Riesgos laborales', `riesgos_laborales_${data.anio}.xlsx`, data.anio,
-      headers, rows, footer, 'reportes:riesgos-laborales-excel', `Año ${data.anio} · ${data.rows.length} empleados`);
+    return saveReportExcel('Guardar Riesgos laborales', `riesgos_laborales_${periodoFile(data.anio, mes)}.xlsx`, periodoLabel(data.anio, mes),
+      headers, rows, footer, 'reportes:riesgos-laborales-excel', `${periodoLabel(data.anio, mes)} · ${data.rows.length} empleados`);
   }));
 }
 
