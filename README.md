@@ -71,18 +71,21 @@ kardex-digital/
 ├─ services/
 │  ├─ db.js               # SQLite: schema, CRUD, auth, auditoría
 │  ├─ pdf.js              # PDF → imágenes / RGBA
-│  ├─ ocr.js              # tesseract.js (worker)
+│  ├─ ocr.js              # tesseract.js (worker, whitelist por pasada)
+│  ├─ preprocess.js       # preprocesado de imagen para OCR
 │  ├─ barcode.js          # decode Code 128 + crop
 │  ├─ parse-cedula.js     # parser de campos OCR + MRZ
+│  ├─ region.js           # OCR dirigido por regiones (etiquetas del frente)
 │  ├─ ai-shared.js         # prompt/parseo compartidos (JSON, cédula)
 │  ├─ ai-extract.js        # extracción con OpenAI (vía OPENAI_API_KEY)
 │  ├─ ai-gemini.js         # extracción con Gemini (vía GEMINI_API_KEY, gratis)
 │  └─ cedula.js           # orquestador processFile()
 ├─ resources/
-│  ├─ tessdata/spa.traineddata.gz
+│  ├─ tessdata/spa.traineddata
 │  └─ tesseract-worker.js
 ├─ scripts/
 │  ├─ make-test-cedula.js # genera test/cedula-prueba.pdf
+│  ├─ download-tessdata.js # descarga spa (tessdata_best)
 │  └─ test-integration.js # test end-to-end del pipeline
 └─ test/cedula-prueba.pdf
 ```

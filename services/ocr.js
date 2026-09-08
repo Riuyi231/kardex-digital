@@ -41,7 +41,7 @@ async function ensureWorker() {
     const created = await withTimeout(
       createWorker(LANGS, 1, {
         langPath: LANGS_DIR,
-        gzip: true,
+        gzip: fs.existsSync(path.join(LANGS_DIR, `${LANGS[0]}.traineddata.gz`)),
         workerPath: path.join(__dirname, '..', 'resources', 'tesseract-worker.js'),
         cachePath: path.join(os.tmpdir(), 'kardex-tess-cache')
       }),
@@ -92,18 +92,47 @@ function cleanWords(data) {
     }));
 }
 
-async function recognize(bufferOrPath) {
+const BASE_PARAMS = {
+  tessedit_pageseg_mode: '3',
+  preserve_interword_spaces: '1'
+};
+
+// Restaura los parámetros globales y, sobre todo, DESACTIVA whitelist/blacklist
+// que hayan quedado de una pasada dirigida. Si no se vacían, un whitelist previo
+// se filtra a los OCR siguientes y degrada (o vacía) el texto.
+function buildParams(opts = {}, restore = false) {
+  const p = { ...BASE_PARAMS };
+  if (opts.psm) p.tessedit_pageseg_mode = String(opts.psm);
+  if (restore) {
+    p.tessedit_char_whitelist = '';
+    p.tessedit_char_blacklist = '';
+    return p;
+  }
+  if (opts.whitelist) p.tessedit_char_whitelist = opts.whitelist;
+  if (opts.blacklist) p.tessedit_char_blacklist = opts.blacklist;
+  return p;
+}
+
+async function applyParams(w, params) {
+  await withTimeout(w.setParameters(params), 10000, 'setparams');
+}
+
+async function recognize(bufferOrPath, opts = {}) {
   return withTmpFile(bufferOrPath, async (target) => {
     const w = await ensureWorker();
+    await applyParams(w, buildParams(opts));
     const { data } = await withTimeout(w.recognize(target), 30000, 'recognize');
+    await applyParams(w, buildParams({}, true));
     return (data && data.text) ? data.text : '';
   });
 }
 
-async function recognizeDetailed(bufferOrPath) {
+async function recognizeDetailed(bufferOrPath, opts = {}, recognizeOpts = {}) {
   return withTmpFile(bufferOrPath, async (target) => {
     const w = await ensureWorker();
-    const { data } = await withTimeout(w.recognize(target, {}, { blocks: true }), 30000, 'recognize-detailed');
+    await applyParams(w, buildParams(opts));
+    const { data } = await withTimeout(w.recognize(target, {}, { blocks: true, ...recognizeOpts }), 30000, 'recognize-detailed');
+    await applyParams(w, buildParams({}, true));
     return {
       text: (data && data.text) ? data.text : '',
       words: cleanWords(data)

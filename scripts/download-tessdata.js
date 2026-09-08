@@ -2,8 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+// tessdata_best (mayor precisión LSTM). Sin comprimir; vacía spa.traineddata.gz
+// para que ocr.js detecte el archivo correcto y no use el legacy.
 const LANGS = [
-  { name: 'spa', url: 'https://tessdata.projectnaptha.com/4.0.0/spa.traineddata.gz', out: 'spa.traineddata.gz' }
+  { name: 'spa', url: 'https://github.com/tesseract-ocr/tessdata_best/raw/main/spa.traineddata', out: 'spa.traineddata' }
 ];
 
 const destDir = path.join(__dirname, '..', 'resources', 'tessdata');
@@ -40,6 +42,8 @@ function download(url, filePath) {
     try {
       await download(lang.url, outPath);
       console.log('OK ->', outPath, fs.statSync(outPath).size, 'bytes');
+      const legacy = path.join(destDir, 'spa.traineddata.gz');
+      if (fs.existsSync(legacy)) fs.unlinkSync(legacy);
     } catch (e) {
       console.error('Fallo descargando', lang.name, e.message);
     }

@@ -23,6 +23,26 @@ const FIELD_DEFS = [
 
 const KNOWN_SHORT = new Set(['DE', 'LA', 'LOS', 'LAS', 'DEL', 'EL', 'EN', 'Y', 'AL', 'SAN']);
 
+// Palabras que delatan texto de etiqueta/cabecera colado en un valor.
+// En las cédulas nuevas el valor puede ser "DOMINICANA", "ELECTORAL",
+// "CÓDULA ANTERIOR", "VIGENCIA HASTA", etc. si la pasada geométrica recortó mal.
+const LABEL_VETO_WORDS = new Set([
+  'CEDULA', 'CÉDULA', 'CÓDULA', 'IDENTIDAD', 'ELECTORAL', 'REPUBLICA', 'NACIONALIDAD',
+  'VIGENCIA', 'HASTA', 'VENCIMIENTO', 'EMISION', 'REGISTRO', 'ANTERIOR', 'NOMBRE',
+  'APELLIDO', 'DOMINICANA', 'MUNICIPIO', 'SECTOR', 'DIRECCION', 'RESIDENCIA',
+  'COLEGIO', 'UBICACION', 'OCUPACION', 'OFICIO', 'JUNTA', 'CENTRAL', 'TITULAR',
+  'FIRMA', 'LUGAR', 'NUMERO'
+]);
+
+function looksLikeLabel(line) {
+  const t = normLabel(line);
+  if (!t) return false;
+  const tokens = t.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return false;
+  return tokens.some((w) => LABEL_VETO_WORDS.has(w)) ||
+    (tokens.length >= 2 && tokens.every((w) => HEADER_KEYWORDS.includes(w) || LABEL_VETO_WORDS.has(w)));
+}
+
 const MESES = {
   ENERO: '01', FEBRERO: '02', MARZO: '03', ABRIL: '04', MAYO: '05', JUNIO: '06',
   JULIO: '07', AGOSTO: '08', SEPTIEMBRE: '09', OCTUBRE: '10', NOVIEMBRE: '11', DICIEMBRE: '12'
@@ -37,7 +57,7 @@ const LABEL_DEFS = [
   { key: 'estado_civil', labels: ['ESTADO CIVIL'] },
   { key: 'sexo', labels: ['SEXO'] },
   { key: 'profesion', labels: ['OCUPACION U OFICIO', 'OCUPACION Y OFICIO', 'PROFESION U OCUPACION', 'PROFESION U OFICIO', 'OCUPACION', 'PROFESION'] },
-  { key: 'fecha_vencimiento', labels: ['FECHA DE VENCIMIENTO', 'FECHA VENCIMIENTO'] }
+  { key: 'fecha_vencimiento', labels: ['FECHA DE VENCIMIENTO', 'FECHA VENCIMIENTO', 'VIGENCIA HASTA', 'VIGENCIA'] }
 ];
 
 function stripAccents(s) {
@@ -154,7 +174,6 @@ function splitName(full) {
   const tokens = text.split(/\s+/);
   if (tokens.length === 1) return { nombres: tokens[0], apellidos: '' };
   if (tokens.length === 2) return { nombres: tokens[0], apellidos: tokens[1] };
-  if (tokens.length === 3) return { nombres: tokens[0], apellidos: tokens.slice(1).join(' ') };
   return { nombres: tokens.slice(0, -2).join(' '), apellidos: tokens.slice(-2).join(' ') };
 }
 
@@ -175,6 +194,7 @@ function isLikelyNameLine(line) {
   const alphaWords = words.filter((w) => /^[A-ZÁÉÍÓÚÜÑ]{2,}$/.test(stripAccents(w).toUpperCase()));
   if (alphaWords.length < 2) return false;
   if (isHeaderLine(line)) return false;
+  if (looksLikeLabel(line)) return false;
   return true;
 }
 
@@ -239,7 +259,7 @@ function bestLabelMatch(line) {
     for (const lbl of def.labels) {
       let sim = 0;
       if (n === lbl || n.startsWith(lbl)) sim = 1;
-      else if (lbl.length >= 8 || n.length >= 8) {
+      else {
         const maxErr = lbl.length >= 12 ? 2 : 1;
         if (findFuzzyIndex(n, lbl, maxErr) === 0) sim = 0.92;
         else if (n.length >= 3) sim = similarity(n, lbl);
@@ -361,17 +381,7 @@ function extractLabeledFields(front, back) {
         );
         value = extractValueFromWords(region, m.key);
       }
-      if (value && !result[m.key]) {
-        // El rótulo compuesto "NOMBRE Y APELLIDOS" suele contener el nombre completo:
-        // sepáralo en nombres y apellidos para no invertirlo ni dejarlo en un solo campo.
-        if (m.key === 'nombres' && /NOMBRE\s*Y\s*APELLIDOS/i.test(m.lbl) && /^.{2,}$/.test(value)) {
-          const spl = splitName(value);
-          if (!result.nombres && spl.nombres) result.nombres = spl.nombres;
-          if (!result.apellidos && spl.apellidos) result.apellidos = spl.apellidos;
-        } else {
-          result[m.key] = value;
-        }
-      }
+      if (value && !result[m.key]) result[m.key] = value;
     }
   }
 
@@ -381,6 +391,7 @@ function extractLabeledFields(front, back) {
       for (const line of lines) {
         const n = normLabel(line.text);
         if (/PADRE|MADRE/.test(n)) continue;
+        if (looksLikeLabel(line.text)) continue;
         if (isLikelyNameLine(line.text) && !bestLabelMatch(line)) {
           const cleaned = line.text.split(/\s+/).map((w) => w.replace(/[^A-ZÁÉÍÓÚÜÑ]/gi, '')).filter((w) => w.length >= 2).join(' ');
           if (cleaned) {
@@ -569,6 +580,51 @@ function parseMrz(frontText, backText) {
 
 /* ======================== Orquestador ======================== */
 
+// Devuelve { clave: motivo } para campos vacíos, malformados o con basura.
+// Se usa para decidir qué campos re-OCRear por región y como reporte de calidad.
+function fieldIssues(fields) {
+  const issues = {};
+  const now = new Date();
+  const year = now.getFullYear();
+  for (const k of ['cedula', 'nombres', 'apellidos', 'sexo', 'fecha_nacimiento', 'nacionalidad',
+    'lugar_nacimiento', 'estado_civil', 'profesion', 'fecha_vencimiento']) {
+    const v = String(fields[k] || '').trim();
+    if (!v) {
+      issues[k] = 'vacio';
+      continue;
+    }
+    if (k === 'cedula') {
+      if (!/^\d{3}-\d{7}-\d$/.test(v)) issues[k] = 'formato';
+      continue;
+    }
+    if (k === 'sexo') {
+      if (!/^[FMO]$/.test(v)) issues[k] = 'invalido';
+      continue;
+    }
+    if (k === 'fecha_nacimiento' || k === 'fecha_vencimiento') {
+      const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) { issues[k] = 'formato'; continue; }
+      const dd = +m[1], mm = +m[2], yyyy = +m[3];
+      if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || yyyy < 1900) { issues[k] = 'imposible'; continue; }
+      if (k === 'fecha_vencimiento' && yyyy < year) issues[k] = 'no_futuro';
+      if (k === 'fecha_nacimiento' && yyyy >= year - 14) issues[k] = 'imposible';
+      continue;
+    }
+    if (looksLikeLabel(v)) issues[k] = 'basura';
+    else if (/\d/.test(v) && k !== 'nombres' && k !== 'apellidos' && k !== 'cedula') {
+      // Números en campos alfabéticos (p.ej. "EMPLEADO 2") suelen ser residuos.
+      if (!/^[0-9\-\/.]{2,}$/.test(v.replace(/\s/g, '')) || k !== 'fecha_nacimiento') {
+        issues[k] = 'numeros';
+      }
+    }
+  }
+  if (fields.fecha_nacimiento && fields.fecha_vencimiento &&
+    fields.fecha_nacimiento === fields.fecha_vencimiento) {
+    issues.fecha_vencimiento = 'duplicado';
+  }
+  return issues;
+}
+
 function normalizeInput(x) {
   if (typeof x === 'string') return { text: x, words: [] };
   return { text: (x && x.text) ? x.text : '', words: (x && x.words) || [] };
@@ -620,11 +676,18 @@ function parseCedula(frontInput, backInput) {
     if (mrz.fecha_nacimiento) fields.fecha_nacimiento = mrz.fecha_nacimiento;
     if (mrz.fecha_vencimiento) fields.fecha_vencimiento = mrz.fecha_vencimiento;
     if (mrz.nacionalidad && !fields.nacionalidad) fields.nacionalidad = mrz.nacionalidad;
-    if (!fields.nombres && mrz.nombres) fields.nombres = mrz.nombres;
-    if (!fields.apellidos && mrz.apellidos) fields.apellidos = mrz.apellidos;
+    // El MRZ es la fuente más confiable para nombres: reemplaza los que vengan
+    // vacíos o claramente corruptos (basura de etiqueta o fragmentos cortos).
+    const namesBad = (cur) => cur && (looksLikeLabel(cur) || cur.length < 4 || /^\d/.test(cur));
+    if (namesBad(fields.nombres) && mrz.nombres) fields.nombres = mrz.nombres;
+    if (namesBad(fields.apellidos) && mrz.apellidos) fields.apellidos = mrz.apellidos;
   }
 
   return fields;
 }
 
-module.exports = { parseCedula, findCedula, normalizeDate, splitName, parseMrz, hasMrz };
+module.exports = {
+  parseCedula, findCedula, normalizeDate, splitName, parseMrz, hasMrz,
+  fieldIssues, looksLikeLabel,
+  linesFromWords, bestLabelMatch, normLabel, cleanAlphaValue, extractDateText, isHeaderLine
+};

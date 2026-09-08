@@ -4,7 +4,8 @@ const { createCanvas, loadImage } = require('./canvas');
 const { pdfToImages, cropImageFile } = require('./pdf');
 const { recognizeDetailed } = require('./ocr');
 const { decodeFromImage, normalizeCedulaNumber } = require('./barcode');
-const { parseCedula, hasMrz } = require('./parse-cedula');
+const { parseCedula, hasMrz, fieldIssues, looksLikeLabel } = require('./parse-cedula');
+const { reconcileFront } = require('./region');
 
 const SECOND_CHANCE_FIELDS = ['nombres', 'apellidos', 'lugar_nacimiento', 'profesion'];
 
@@ -88,14 +89,9 @@ async function ocrRightColumn(buffer, targetWidth) {
 
 function extractEstadoCivil(text) {
   const t = stripAccents(String(text || '')).toUpperCase();
-  let val = '';
-  let m = t.match(/ESTADO\s*CIVIL\s*:?\s*([A-Z]{3,}(?:\s+[A-Z]{3,})?)/);
-  if (m) val = m[1];
-  if (!val || /INICANA|DOMINICANA|NACIONALIDAD|SEXO/.test(val)) {
-    const known = t.match(/UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO/);
-    if (known) val = known[0];
-  }
-  return val.replace(/\s*\(?A\)?\s*$/i, '').trim();
+  const known = t.match(/UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO/);
+  if (known) return known[0].replace(/\s*\(?A\)?\s*$/i, '').trim();
+  return '';
 }
 
 async function decodeFirstBarcode(pages) {
@@ -106,6 +102,57 @@ async function decodeFirstBarcode(pages) {
     } catch (e) { /* noop */ }
   }
   return null;
+}
+
+// ¿Requiere el campo un re-OCR por región? Solo campos vacíos o claramente
+// corruptos; nunca los que ya traen un valor coherente.
+function needsRegion(key, value) {
+  const v = String(value || '').trim();
+  if (!v) return true;
+  if (looksLikeLabel(v) && !(key === 'nacionalidad' && v.toUpperCase() === 'DOMINICANA')) return true;
+  if (key === 'sexo') return !/^[FMO]$/.test(v);
+  if (key === 'fecha_nacimiento' || key === 'fecha_vencimiento') {
+    const m = v.match(/^\d{2}\/\d{2}\/\d{4}$/);
+    if (!m) return true;
+    const dd = +v.slice(0, 2), mm = +v.slice(3, 5), yyyy = +v.slice(6);
+    return mm < 1 || mm > 12 || dd < 1 || dd > 31 || yyyy < 1900;
+  }
+  if (key === 'cedula') return !/^\d{3}-\d{7}-\d$/.test(v);
+  if (key === 'nacionalidad') return v.toUpperCase() !== 'DOMINICANA';
+  if (key === 'nombres' || key === 'apellidos') return /^\d/.test(v) || v.length < 4;
+  return v.length < 1;
+}
+
+// Política "no causar daño": un valor de región solo reemplaza si es estricta-
+// mente mejor (enum conocido, fecha plausible, o corregir vacío/basura).
+function acceptRegionValue(key, oldValue, newValue) {
+  if (!newValue) return false;
+  const nv = String(newValue).trim();
+  const ov = String(oldValue || '').trim();
+  if (key === 'estado_civil') {
+    return /UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO/i.test(nv);
+  }
+  if (key === 'sexo') return /^[FMO]$/i.test(nv);
+  if (key === 'fecha_vencimiento' || key === 'fecha_nacimiento') {
+    const m = nv.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m || +m[2] < 1 || +m[2] > 12 || +m[1] < 1 || +m[1] > 31) return false;
+    const yyyy = +m[3];
+    if (key === 'fecha_vencimiento' && yyyy < new Date().getFullYear()) return false;
+    if (key === 'fecha_nacimiento' && (yyyy < 1900 || yyyy >= new Date().getFullYear() - 14)) return false;
+    return true;
+  }
+  if (key === 'cedula') return /^\d{3}-\d{7}-\d$/.test(nv) && nv !== ov;
+  // Nacionalidad: solo valores conocidos plausibles.
+  if (key === 'nacionalidad') {
+    if (!/^(DOMINICANA|DOMINICANO|HAITIANA?|VENEZOLANA?|COLOMBIANA?|ESTADOUNIDENSE|ESPANIOLA?|ITALIANA?|CANADIENSE)$/i.test(nv)) return false;
+    return nv.toUpperCase() !== ov.toUpperCase();
+  }
+  // Campos alfabéticos (nombres, apellidos, lugar, profesión):
+  // un valor existente razonable no se toca; el nuevo debe ser plausible.
+  const oldGood = ov.length >= 4 && !/\d/.test(ov) && !looksLikeLabel(ov);
+  if (oldGood) return false;
+  if (nv.length < 3 || /\d/.test(nv) || looksLikeLabel(nv)) return false;
+  return true;
 }
 
 async function processFile(filePath) {
@@ -166,31 +213,61 @@ async function processFile(filePath) {
   const missing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
   if (missing.length && front && !ocrFailed) {
     try {
-      // Segunda pasada priorizando solo el anverso (los campos faltantes —nombres,
-      // apellidos, lugar de nacimiento, profesión— residen en el frente). Esto evita
-      // re-escalar/re-renderizar el reverso (costoso) cuando no hace falta.
       const f2 = await recognizeDetailed(await upscale(front.buffer, 2));
-      const parsed = parseCedula(f2, ocrBack);
+      const b2 = back ? await recognizeDetailed(await upscale(back.buffer, 2)) : { text: '', words: [] };
+      const fields2 = parseCedula(f2, b2);
       for (const k of missing) {
-        if (parsed[k] && !fields[k]) fields[k] = parsed[k];
-      }
-      let stillMissing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
-      if (stillMissing.length && back) {
-        const b2 = await recognizeDetailed(await upscale(back.buffer, 2));
-        const parsed2 = parseCedula(f2, b2);
-        for (const k of stillMissing) {
-          if (parsed2[k] && !fields[k]) fields[k] = parsed2[k];
-        }
+        if (fields2[k] && !fields[k]) fields[k] = fields2[k];
       }
     } catch (e) { /* noop */ }
   }
 
-  if (!fields.estado_civil && front && !ocrFailed) {
+  // OCR por regiones: relee los campos rotos recortando el área de su etiqueta
+  // con whitelist de caracteres. Solo corrige; nunca empeora un valor bueno.
+  const issues = fieldIssues(fields);
+  const regionNeeds = Object.keys(issues).filter((k) => needsRegion(k, fields[k]));
+  if (regionNeeds.length && front && !ocrFailed) {
+    try {
+      const fixed = await reconcileFront({
+        ...front,
+        words: (ocrFront && ocrFront.words) || []
+      }, regionNeeds);
+      for (const k of Object.keys(fixed)) {
+        if (acceptRegionValue(k, fields[k], fixed[k])) fields[k] = fixed[k];
+      }
+    } catch (e) {
+      console.error('[KARDEX] Error en ocr por regiones:', e.message || e);
+    }
+  }
+
+  if ((!fields.estado_civil || !fields.sexo) && front && !ocrFailed) {
     try {
       const right = await ocrRightColumn(front.buffer, 1400);
       const val = extractEstadoCivil(right.text);
       if (val && !fields.estado_civil) fields.estado_civil = val;
+      if (!fields.sexo) {
+        const m = right.text.match(/SEXO\s*[:.]?\s*([FMO])/i);
+        if (m) fields.sexo = m[1].toUpperCase();
+      }
     } catch (e) { /* noop */ }
+  }
+
+  // Sanitización final: nunca dejar basura de etiqueta en campos alfabéticos,
+  // valores de estado civil/sexo no válidos, ni fechas de vencimiento pasadas.
+  for (const k of ['nombres', 'apellidos', 'lugar_nacimiento', 'profesion']) {
+    if (fields[k] && looksLikeLabel(fields[k])) fields[k] = '';
+  }
+  if (fields.nacionalidad && fields.nacionalidad.toUpperCase() !== 'DOMINICANA' && looksLikeLabel(fields.nacionalidad)) {
+    fields.nacionalidad = '';
+  }
+  if (fields.estado_civil) {
+    const ec = stripAccents(String(fields.estado_civil)).toUpperCase().trim().replace(/\s+/g, ' ');
+    if (!/^(UNION LIBRE|UNION CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO)$/.test(ec)) fields.estado_civil = '';
+  }
+  if (fields.sexo && !/^[FMO]$/.test(stripAccents(fields.sexo).toUpperCase())) fields.sexo = '';
+  if (fields.fecha_vencimiento) {
+    const m = fields.fecha_vencimiento.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m || +m[3] < new Date().getFullYear()) fields.fecha_vencimiento = '';
   }
 
   let barcode = null;
@@ -200,8 +277,12 @@ async function processFile(filePath) {
     console.error('[KARDEX] Error decodificando barcode:', e.message);
   }
 
-  if (barcode && /^\d{11}$/.test(barcode.replace(/\D/g, ''))) {
-    fields.cedula = normalizeCedulaNumber(barcode);
+  const warnings = [];
+  const barcodeDigits = barcode ? String(barcode).replace(/\D/g, '') : '';
+  if (barcodeDigits.length === 11) {
+    const bc = normalizeCedulaNumber(barcode);
+    if (fields.cedula && fields.cedula !== bc) warnings.push('cedula_ocr_vs_barcode');
+    fields.cedula = bc;
   }
 
   return {
@@ -209,6 +290,7 @@ async function processFile(filePath) {
     front: front.dataUrl,
     back: back ? back.dataUrl : null,
     barcode,
+    warnings,
     fields,
     ocrText: ocrFailed
       ? '(OCR no disponible — verifique tessdata o reinicie la app)'

@@ -503,7 +503,7 @@ function registerIpc() {
     const { isNative, implementation } = require('./services/canvas');
     const fs2 = require('fs');
     const path2 = require('path');
-    const tessPath = path2.join(__dirname, 'resources', 'tessdata', 'spa.traineddata.gz');
+    const tessPath = path2.join(__dirname, 'resources', 'tessdata', 'spa.traineddata');
     const tessUnzipped = path2.join(__dirname, 'resources', 'tessdata', 'spa.traineddata');
     return {
       canvas: { native: isNative, implementation },
