@@ -184,7 +184,8 @@ async function processFile(filePath) {
   let ocrResults = [];
   let ocrFailed = false;
   try {
-    for (const page of pages) ocrResults.push(await recognizeDetailed(page.buffer));
+    // Reconocer frente y reverso EN PARALELO (pool de workers en ocr.js).
+    ocrResults = await Promise.all(pages.map((page) => recognizeDetailed(page.buffer)));
   } catch (e) {
     console.error('[KARDEX] Error en OCR:', e.message);
     ocrFailed = true;
@@ -213,9 +214,10 @@ async function processFile(filePath) {
   const missing = SECOND_CHANCE_FIELDS.filter((k) => !fields[k]);
   if (missing.length && front && !ocrFailed) {
     try {
-      const f2 = await recognizeDetailed(await upscale(front.buffer, 2));
-      const b2 = back ? await recognizeDetailed(await upscale(back.buffer, 2)) : { text: '', words: [] };
-      const fields2 = parseCedula(f2, b2);
+      // Segunda pasada SOLO en el frente (los campos que faltan viven ahí) y a
+      // factor moderado: la precisión extra la hace el OCR por regiones.
+      const f2 = await recognizeDetailed(await upscale(front.buffer, 1.5));
+      const fields2 = parseCedula(f2, { text: '', words: [] });
       for (const k of missing) {
         if (fields2[k] && !fields[k]) fields[k] = fields2[k];
       }
@@ -268,6 +270,23 @@ async function processFile(filePath) {
   if (fields.fecha_vencimiento) {
     const m = fields.fecha_vencimiento.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m || +m[3] < new Date().getFullYear()) fields.fecha_vencimiento = '';
+  }
+  // Validadores duros: un campo que no pasa la estructura no se rellena (mejor
+  // vacío que en el campo equivocado).
+  const yearNow = new Date().getFullYear();
+  if (fields.fecha_nacimiento) {
+    const mn = fields.fecha_nacimiento.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!mn || +mn[2] < 1 || +mn[2] > 12 || +mn[1] < 1 || +mn[1] > 31 || +mn[3] < 1900 || +mn[3] > yearNow || yearNow - +mn[3] < 14) {
+      fields.fecha_nacimiento = '';
+    }
+  }
+  for (const k of ['nombres', 'apellidos', 'lugar_nacimiento', 'profesion']) {
+    if (fields[k] && /\d/.test(fields[k])) fields[k] = '';
+  }
+  if (fields.nombres && fields.apellidos &&
+    fields.nombres.length > 3 && fields.nombres === fields.apellidos) {
+    fields.nombres = '';
+    fields.apellidos = '';
   }
 
   let barcode = null;

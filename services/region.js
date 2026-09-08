@@ -84,7 +84,12 @@ async function ocrRegion(page, labelLine, key) {
   } else {
     x0 = Math.max(0, labelLine.x0 - 8);
   }
-  const x1 = Math.min(page.width, Math.min(labelLine.x1 + 300, labelLine.x0 + 560));
+  let x1 = Math.min(page.width, Math.min(labelLine.x1 + 300, labelLine.x0 + 560));
+  // Campo de la columna izquierda: no cortar dentro de la columna derecha.
+  if (!RHS_KEYS.has(key) && labelLine.x0 < page.maxX * 0.45) {
+    x1 = Math.min(x1, page.midX);
+  }
+  if (x1 <= x0) return '';
   const y0 = Math.max(0, labelLine.y1 - 2);
   const y1 = Math.min(page.height, labelLine.y1 + lh * 3.2 + 6);
 

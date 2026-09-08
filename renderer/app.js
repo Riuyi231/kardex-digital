@@ -3153,6 +3153,7 @@
         if (dimsEl) dimsEl.textContent = `${img.naturalWidth}×${img.naturalHeight}px`;
       };
       wrap.appendChild(img);
+      resetZoom(wrap);
     } else {
       const ph = document.createElement('div');
       ph.className = 'preview-placeholder';
@@ -3266,6 +3267,24 @@
   function setModalTab(name) {
     document.querySelectorAll('#employee-modal .modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('#employee-modal .tab-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+  }
+
+  function applyZoom(wrap, img, z, valEl) {
+    wrap.dataset.z = String(z);
+    if (img) {
+      img.style.transformOrigin = 'top left';
+      img.style.transform = z === 1 ? '' : `scale(${z})`;
+    }
+    wrap.style.overflow = z === 1 ? '' : 'auto';
+    wrap.style.alignItems = z === 1 ? '' : 'flex-start';
+    wrap.style.cursor = z === 1 ? '' : 'zoom-in';
+    if (valEl) valEl.textContent = Math.round(z * 100) + '%';
+  }
+
+  function resetZoom(wrap) {
+    const fig = wrap.closest('.preview-card');
+    const valEl = fig ? fig.querySelector('.zoom-val') : null;
+    applyZoom(wrap, wrap.querySelector('img'), 1, valEl);
   }
 
   function showCedulaAmpliada(side) {
@@ -3604,6 +3623,22 @@
     const _lightbox = $('cedula-lightbox');
     if (_lightbox) _lightbox.addEventListener('click', (e) => {
       if (e.target === $('cedula-lightbox')) closeCedulaLightbox();
+    });
+
+    document.querySelectorAll('.zoom-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const card = btn.closest('.preview-card');
+        const wrap = card ? card.querySelector('.preview-img-wrap') : null;
+        const img = wrap ? wrap.querySelector('img') : null;
+        const valEl = card ? card.querySelector('.zoom-val') : null;
+        if (!wrap || !img) return;
+        let z = parseFloat(wrap.dataset.z || '1');
+        const act = btn.getAttribute('data-z');
+        if (act === 'i') z = Math.min(5, Math.round(z * 1.4 * 100) / 100);
+        else if (act === 'd') z = Math.max(0.5, Math.round((z / 1.4) * 100) / 100);
+        else z = 1;
+        applyZoom(wrap, img, z, valEl);
+      });
     });
 
     $('btn-reprocess').addEventListener('click', async () => {

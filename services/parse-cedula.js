@@ -216,13 +216,19 @@ function findSexo(lines) {
 function linesFromWords(words) {
   if (!words || !words.length) return [];
   const ws = words.slice().sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0));
+  const maxX = ws.reduce((m, w) => Math.max(m, w.x1), 0);
+  // Hueco mínimo entre palabras para considerar que empezó OTRA COLUMNA
+  // (en la cédula las columnas comparten la misma altura). Sin esto, una
+  // línea de la columna izquierda y su equivalente de la derecha se fusionan
+  // y contaminan etiquetas y valores.
+  const columnGap = Math.max(90, maxX * 0.05);
   const lines = [];
   for (const w of ws) {
     let placed = false;
     for (const line of lines) {
       const cy = (line.y0 + line.y1) / 2;
       const wy = (w.y0 + w.y1) / 2;
-      if (Math.abs(wy - cy) <= 7) {
+      if (Math.abs(wy - cy) <= 7 && w.x0 - line.x1 <= columnGap) {
         line.words.push(w);
         line.x0 = Math.min(line.x0, w.x0);
         line.x1 = Math.max(line.x1, w.x1);
@@ -288,6 +294,8 @@ function extractValueFromWords(words, key) {
     .filter((w) => w.conf >= 40)
     .map((w) => {
       const bare = w.text.replace(/[^A-ZÁÉÍÓÚÜÑ]/gi, '').toUpperCase();
+      if (!bare) return '';
+      if (isLabelWord(bare) && !(key === 'nacionalidad' && (bare === 'DOMINICANA' || bare === 'DOMINICANO'))) return '';
       return bare.length >= 2 && (bare.length >= 3 || KNOWN_SHORT.has(bare)) ? bare : '';
     })
     .filter(Boolean);
@@ -330,6 +338,34 @@ function cleanInlineValue(rest, key) {
   return cleanAlphaValue(rest);
 }
 
+// Palabras de rótulo que si aparecen dentro de un valor indican que el recorte
+// capturó la etiqueta (o la otra columna). Se descartan para que un valor nunca
+// quede contaminado con texto de etiqueta vecina.
+const VALUE_VETO_WORDS = new Set([
+  'NOMBRE', 'NOMBRES', 'APELLIDO', 'APELLIDOS', 'NACIONALIDAD', 'NACIONALID',
+  'DOMINICANA', 'OCUPACION', 'PROFESION', 'OFICIO', 'SEXO', 'ESTADO', 'CIVIL',
+  'VIGENCIA', 'HASTA', 'FECHA', 'NACIMIENTO', 'VENCIMIENTO', 'LUGAR', 'CEDULA',
+  'CEDUL', 'CODULA', 'IDENTIDAD', 'ELECTORAL', 'REPUBLICA', 'JUNTA', 'CENTRAL',
+  'TITULAR', 'NUMERO', 'MASCULINO', 'FEMENINO', 'FIRMA', 'REGISTRO', 'ANTERIOR',
+  'MUNICIPIO', 'COLEGIO', 'DIRECCION', 'RESIDENCIA', 'RECINTO', 'PADRE', 'MADRE',
+  'PROVINCIA', 'SECTOR', 'UBICACION', 'NONBRE', 'APELLI', 'APELLDOS'
+]);
+
+function isLabelWord(w) {
+  const n = stripAccents(String(w || '')).toUpperCase().replace(/[^A-Z]/g, '');
+  return VALUE_VETO_WORDS.has(n);
+}
+
+function medianLineHeight(words) {
+  const hs = words.filter((w) => (w.y1 - w.y0) > 4).map((w) => w.y1 - w.y0).sort((a, b) => a - b);
+  if (!hs.length) return 22;
+  return hs.length % 2 ? hs[(hs.length - 1) >> 1] : (hs[hs.length / 2 - 1] + hs[hs.length / 2]) / 2;
+}
+
+function sideOf(x, midX) {
+  return x >= midX ? 'right' : 'left';
+}
+
 function extractLabeledFields(front, back) {
   const result = {};
   const pages = [
@@ -363,20 +399,38 @@ function extractLabeledFields(front, back) {
 
   for (const page of pages) {
     const pageWidth = page.words.length ? Math.max(...page.words.map((w) => w.x1)) : 0;
+    const midX = pageWidth * 0.5;
+    const lh = medianLineHeight(page.words) || 22;
     const pageMatches = matched.filter((m) => m.page === page).sort((a, b) => a.line.y0 - b.line.y0);
+    const twoColumn = pageMatches.some((m) => m.line.x0 < midX) && pageMatches.some((m) => m.line.x0 >= midX);
     for (let i = 0; i < pageMatches.length; i++) {
       const m = pageMatches[i];
       const labelLine = m.line;
       let value = cleanInlineValue(valueAfterLabel(labelLine.text, m.lbl), m.key);
       if (!value) {
         const labelWords = new Set(labelLine.words);
-        const nextY = i + 1 < pageMatches.length ? pageMatches[i + 1].line.y0 : Infinity;
-        const xMax = labelLine.x0 + Math.max(150, pageWidth * 0.4);
+        const side = sideOf(labelLine.x0, midX);
+        const nextSame = pageMatches.slice(i + 1).find((m2) => sideOf(m2.line.x0, midX) === side);
+        const bottomY = Math.min(
+          nextSame ? nextSame.line.y0 : Infinity,
+          labelLine.y1 + lh * 3.5 + 6
+        );
+        let xMin = Math.max(0, labelLine.x0 - 15);
+        let xMax;
+        if (twoColumn && side === 'left') {
+          const wide = labelLine.x0 + Math.max(150, pageWidth * 0.3);
+          xMax = Math.min(midX - 4, Math.max(labelLine.x1 + 30, wide));
+        } else if (twoColumn && side === 'right') {
+          xMin = Math.max(0, Math.max(midX, labelLine.x0 - 15));
+          xMax = Math.min(pageWidth, Math.max(labelLine.x1 + 120, labelLine.x0 + 150));
+        } else {
+          xMax = Math.min(pageWidth, labelLine.x0 + Math.max(150, pageWidth * 0.4));
+        }
         const region = page.words.filter((w) =>
           !labelWords.has(w) &&
           w.y0 >= labelLine.y1 - 12 &&
-          w.y0 < nextY &&
-          w.x0 >= labelLine.x0 - 15 &&
+          w.y0 < bottomY &&
+          w.x0 >= xMin &&
           w.x0 <= xMax
         );
         value = extractValueFromWords(region, m.key);
@@ -537,29 +591,55 @@ function parseMrz(frontText, backText) {
   const result = {};
 
   const candidates = [];
+  // La cédula del MRZ dominicano está en una sola línea ("IDDOM<número<…").
+  // 1) Se buscan primero SEGMENTOS EXACTOS de 11 dígitos (flanqueados por '<'
+  //    o por el inicio/fin de línea) que validen el dígito de control: esto
+  //    evita falsos positivos de la ventana deslizante.
+  // 2) Si el OCR partió el número con '<', se usa la ventana deslizante
+  //    empezando desde el FINAL (donde suele vivir el número) validando.
   for (const line of mrzLines) {
     for (const seg of line.split('<')) {
-      const digits = seg.replace(/[^0-9]/g, '');
-      if (digits.length < 11) continue;
-      if (digits.length === 11) candidates.push({ s: digits, exact: true });
-      else for (let i = 0; i + 11 <= digits.length; i++) candidates.push({ s: digits.slice(i, i + 11), exact: false });
+      const digits = seg.replace(/\D/g, '');
+      if (digits.length === 11 && checkDigitValid(digits)) candidates.push({ s: digits, exact: true });
+    }
+    if (candidates.length) break;
+  }
+  if (!candidates.length) {
+    for (const line of mrzLines) {
+      const digits = line.replace(/\D/g, '');
+      for (let i = digits.length - 11; i >= 0; i--) {
+        const s = digits.slice(i, i + 11);
+        if (checkDigitValid(s)) { candidates.push({ s, exact: false }); break; }
+      }
+      if (candidates.length) break;
     }
   }
-  const match = candidates.find((c) => c.exact && checkDigitValid(c.s)) ||
-                candidates.find((c) => checkDigitValid(c.s));
+  const match = candidates.find((c) => c.exact) || candidates[0] || null;
   if (match) {
     const s = match.s;
     result.cedula = `${s.slice(0, 3)}-${s.slice(3, 10)}-${s.slice(10)}`;
   }
 
-  const NAME_LINE_RE = /^[A-ZÁÉÍÓÚÜÑ]+(<[A-ZÁÉÍÓÚÜÑ]+)*<<[A-ZÁÉÍÓÚÜÑ]+(<[A-ZÁÉÍÓÚÜÑ]+)*$/;
-  const nameLine = mrzLines
-    .map((l) => l.replace(/[^A-ZÁÉÍÓÚÜÑ<]/gi, '').toUpperCase())
-    .find((l) => NAME_LINE_RE.test(l));
+  // Línea de nombres: se elige la línea del bloque con más letras y con ambas
+  // partes (apellidos<<nombres) legibles; se tolera basura final del OCR
+  // ("ESMERALDA<<:") y se ignora la línea de cabecera del documento (IDDOM…).
+  let nameLine = '';
+  let bestLetters = 0;
+  for (const raw of mrzLines) {
+    const cleaned = raw.replace(/[^A-ZÁÉÍÓÚÜÑ<]/gi, '').toUpperCase();
+    if (!cleaned.includes('<<')) continue;
+    if (/DOMO|IDO|ID1|ID2/.test(cleaned)) continue;
+    const parts = cleaned.split('<<');
+    const p0 = (parts[0] || '').replace(/</g, '').trim();
+    const p1 = (parts.slice(1).join('') || '').replace(/</g, '').trim();
+    const letters = p0.length + p1.length;
+    if (p0.length < 3 || p1.length < 3 || letters <= bestLetters) continue;
+    nameLine = cleaned;
+    bestLetters = letters;
+  }
   if (nameLine) {
-    const parts = nameLine.split('<<');
-    const primary = (parts[0] || '').replace(/</g, ' ').trim();
-    const secondary = (parts[1] || '').replace(/</g, ' ').trim();
+    const primary = nameLine.slice(0, nameLine.indexOf('<<')).replace(/</g, ' ').replace(/\s+/g, ' ').trim();
+    const secondary = nameLine.slice(nameLine.indexOf('<<') + 2).replace(/</g, ' ').replace(/\s+/g, ' ').trim();
     if (primary) result.apellidos = primary;
     if (secondary) result.nombres = secondary;
   }
@@ -676,11 +756,22 @@ function parseCedula(frontInput, backInput) {
     if (mrz.fecha_nacimiento) fields.fecha_nacimiento = mrz.fecha_nacimiento;
     if (mrz.fecha_vencimiento) fields.fecha_vencimiento = mrz.fecha_vencimiento;
     if (mrz.nacionalidad && !fields.nacionalidad) fields.nacionalidad = mrz.nacionalidad;
-    // El MRZ es la fuente más confiable para nombres: reemplaza los que vengan
-    // vacíos o claramente corruptos (basura de etiqueta o fragmentos cortos).
-    const namesBad = (cur) => cur && (looksLikeLabel(cur) || cur.length < 4 || /^\d/.test(cur));
-    if (namesBad(fields.nombres) && mrz.nombres) fields.nombres = mrz.nombres;
-    if (namesBad(fields.apellidos) && mrz.apellidos) fields.apellidos = mrz.apellidos;
+    // Nombres: el MRZ ordena "APELLIDO<<NOMBRES" y es la fuente más confiable
+    // de la cédula. Reemplaza SIEMPRE lo que venga de la imagen (que suele ser
+    // ruidoso o con el orden equivocado) siempre que sea alfabético y limpio.
+    const mrzNamesOk = mrz.apellidos && mrz.nombres &&
+      /^[A-ZÁÉÍÓÚÜÑ ]+$/.test(mrz.apellidos) && /^[A-ZÁÉÍÓÚÜÑ ]+$/.test(mrz.nombres) &&
+      mrz.apellidos.length >= 2 && mrz.nombres.length >= 2 &&
+      !looksLikeLabel(mrz.apellidos) && !looksLikeLabel(mrz.nombres);
+    if (mrzNamesOk) {
+      fields.apellidos = mrz.apellidos;
+      fields.nombres = mrz.nombres;
+    } else {
+      // Sin MRZ de nombres válido: reemplaza solo vacíos o claramente corruptos.
+      const namesBad = (cur) => !cur || looksLikeLabel(cur) || cur.length < 4 || /^\d/.test(cur);
+      if (namesBad(fields.nombres) && mrz.nombres) fields.nombres = mrz.nombres;
+      if (namesBad(fields.apellidos) && mrz.apellidos) fields.apellidos = mrz.apellidos;
+    }
   }
 
   return fields;

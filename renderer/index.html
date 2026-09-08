@@ -875,11 +875,25 @@
 
       <div class="preview-grid">
         <figure class="preview-card">
-          <figcaption>Frente <span class="preview-dims" id="preview-front-dims"></span></figcaption>
+          <figcaption>Frente <span class="preview-dims" id="preview-front-dims"></span>
+            <span class="zoom-ctl">
+              <button type="button" class="zoom-btn" data-z="d" title="Alejar">−</button>
+              <span class="zoom-val" id="zoom-front-val">100%</span>
+              <button type="button" class="zoom-btn" data-z="i" title="Acercar">+</button>
+              <button type="button" class="zoom-btn zoom-reset" data-z="r" title="Restaurar tamaño normal">↺</button>
+            </span>
+          </figcaption>
           <div class="preview-img-wrap" id="preview-front"><div class="preview-placeholder">Sin imagen</div></div>
         </figure>
         <figure class="preview-card">
-          <figcaption>Reverso <span class="preview-dims" id="preview-back-dims"></span></figcaption>
+          <figcaption>Reverso <span class="preview-dims" id="preview-back-dims"></span>
+            <span class="zoom-ctl">
+              <button type="button" class="zoom-btn" data-z="d" title="Alejar">−</button>
+              <span class="zoom-val" id="zoom-back-val">100%</span>
+              <button type="button" class="zoom-btn" data-z="i" title="Acercar">+</button>
+              <button type="button" class="zoom-btn zoom-reset" data-z="r" title="Restaurar tamaño normal">↺</button>
+            </span>
+          </figcaption>
           <div class="preview-img-wrap" id="preview-back"><div class="preview-placeholder">Sin imagen</div></div>
         </figure>
       </div>

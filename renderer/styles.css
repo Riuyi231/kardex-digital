@@ -315,8 +315,16 @@ body {
 
 .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 20px; }
 .preview-card { min-width: 0; }
-.preview-card figcaption { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
-.preview-card figcaption .preview-dims { font-weight: 400; font-size: 11px; color: #94a3b8; margin-left: 6px; }
+.preview-card figcaption { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.preview-card figcaption .preview-dims { font-weight: 400; font-size: 11px; color: #94a3b8; margin: 0 6px 0 0; }
+.zoom-ctl { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.zoom-btn {
+  padding: 1px 9px; font-size: 13px; line-height: 17px; cursor: pointer; user-select: none;
+  border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 6px;
+}
+.zoom-btn:hover { background: #f1f5f9; }
+.zoom-reset { font-size: 12px; padding: 1px 7px; }
+.zoom-val { font-size: 11px; color: #64748b; min-width: 36px; text-align: center; }
 .preview-img-wrap {
   border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
   min-height: 110px; max-height: 210px; display: flex; align-items: center; justify-content: center; background: #f8fafc;

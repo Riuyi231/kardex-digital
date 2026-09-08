@@ -6,8 +6,14 @@ const { createWorker } = require('tesseract.js');
 const LANGS = ['spa'];
 const LANGS_DIR = path.join(__dirname, '..', 'resources', 'tessdata');
 
-let worker = null;
-let working = false;
+// Pool acotado de workers: permite OCR en paralelo de frente+reverso sin
+// saturar la CPU. Ajustable por entorno para máquinas débiles o potentes.
+const POOL_SIZE = Math.max(1, Number(process.env.KARDEX_OCR_POOL) || 2);
+
+const pool = [];      // workers creados (en uso o libres)
+const idle = [];      // workers listos para tomar trabajo
+const waiters = [];   // llamadas esperando por un worker libre
+let creating = 0;     // trabajadores en creación concurrente
 
 // Hard cap so a hung worker (e.g. WASM threads unavailable on 32-bit Windows)
 // never blocks the renderer forever. On timeout we throw a controlled error
@@ -32,38 +38,52 @@ function tessdataReady() {
   return true;
 }
 
-async function ensureWorker() {
-  if (worker) return worker;
+async function createTessWorker() {
   if (!tessdataReady()) {
     throw new Error('Faltan los datos de idioma de Tesseract. Ejecute: npm run tessdata');
   }
-  try {
-    const created = await withTimeout(
-      createWorker(LANGS, 1, {
-        langPath: LANGS_DIR,
-        gzip: fs.existsSync(path.join(LANGS_DIR, `${LANGS[0]}.traineddata.gz`)),
-        workerPath: path.join(__dirname, '..', 'resources', 'tesseract-worker.js'),
-        cachePath: path.join(os.tmpdir(), 'kardex-tess-cache')
-      }),
-      20000,
-      'worker-init'
-    );
-    await withTimeout(created.setParameters({
-      tessedit_pageseg_mode: '3',
-      preserve_interword_spaces: '1'
-    }), 10000, 'worker-setparams');
-    worker = created;
-    return worker;
-  } catch (e) {
-    // Worker could not start (common on 32-bit Windows when WASM threading is
-    // unavailable). Leave worker=null so future calls can retry, and surface
-    // a controlled error instead of hanging forever.
-    if (worker) {
-      try { await worker.terminate(); } catch (e2) { /* noop */ }
-      worker = null;
+  const created = await withTimeout(
+    createWorker(LANGS, 1, {
+      langPath: LANGS_DIR,
+      gzip: fs.existsSync(path.join(LANGS_DIR, `${LANGS[0]}.traineddata.gz`)),
+      workerPath: path.join(__dirname, '..', 'resources', 'tesseract-worker.js'),
+      cachePath: path.join(os.tmpdir(), 'kardex-tess-cache')
+    }),
+    20000,
+    'worker-init'
+  );
+  await withTimeout(created.setParameters({
+    tessedit_pageseg_mode: '3',
+    preserve_interword_spaces: '1'
+  }), 10000, 'worker-setparams');
+  return created;
+}
+
+// Obtiene un worker: reutiliza uno libre, crea si no se llegó al tope, o espera
+// a que alguien libere. Nunca crea más de POOL_SIZE trabajadores.
+async function ensureWorker() {
+  if (idle.length) return idle.pop();
+  if (pool.length + creating < POOL_SIZE) {
+    creating++;
+    try {
+      const w = await createTessWorker();
+      pool.push(w);
+      return w;
+    } catch (e) {
+      // Si la creación falla, no dejemos esperando a los que ya están en cola.
+      while (waiters.length) waiters.shift().reject(e);
+      throw e;
+    } finally {
+      creating--;
     }
-    throw e;
   }
+  return new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+}
+
+function releaseWorker(w) {
+  const next = waiters.shift();
+  if (next) next.resolve(w);
+  else idle.push(w);
 }
 
 function withTmpFile(bufferOrPath, fn) {
@@ -120,30 +140,40 @@ async function applyParams(w, params) {
 async function recognize(bufferOrPath, opts = {}) {
   return withTmpFile(bufferOrPath, async (target) => {
     const w = await ensureWorker();
-    await applyParams(w, buildParams(opts));
-    const { data } = await withTimeout(w.recognize(target), 30000, 'recognize');
-    await applyParams(w, buildParams({}, true));
-    return (data && data.text) ? data.text : '';
+    try {
+      await applyParams(w, buildParams(opts));
+      const { data } = await withTimeout(w.recognize(target), 30000, 'recognize');
+      return (data && data.text) ? data.text : '';
+    } finally {
+      await applyParams(w, buildParams({}, true)).catch(() => {});
+      releaseWorker(w);
+    }
   });
 }
 
 async function recognizeDetailed(bufferOrPath, opts = {}, recognizeOpts = {}) {
   return withTmpFile(bufferOrPath, async (target) => {
     const w = await ensureWorker();
-    await applyParams(w, buildParams(opts));
-    const { data } = await withTimeout(w.recognize(target, {}, { blocks: true, ...recognizeOpts }), 30000, 'recognize-detailed');
-    await applyParams(w, buildParams({}, true));
-    return {
-      text: (data && data.text) ? data.text : '',
-      words: cleanWords(data)
-    };
+    try {
+      await applyParams(w, buildParams(opts));
+      const { data } = await withTimeout(w.recognize(target, {}, { blocks: true, ...recognizeOpts }), 30000, 'recognize-detailed');
+      return {
+        text: (data && data.text) ? data.text : '',
+        words: cleanWords(data)
+      };
+    } finally {
+      await applyParams(w, buildParams({}, true)).catch(() => {});
+      releaseWorker(w);
+    }
   });
 }
 
 async function resetWorker() {
-  if (worker) {
-    try { await worker.terminate(); } catch (e) { /* noop */ }
-    worker = null;
+  const ws = pool.splice(0);
+  idle.length = 0;
+  while (waiters.length) waiters.shift().reject(new Error('OCR_RESET'));
+  for (const w of ws) {
+    try { await w.terminate(); } catch (e) { /* noop */ }
   }
 }
 
