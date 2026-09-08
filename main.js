@@ -1233,10 +1233,10 @@ function registerIpc() {
             sfsPatronal: 0, iessl: 0, srl: 0, afpPatronal: 0, infotep: 0 };
         }
         const e = byId[row.id];
-        const ap = nomina.calcAportesPatronales(row.bruto);
+        const ap = nomina.calcAportesPatronales(row.salario, row.bruto);
         e.bruto = round2(e.bruto + row.bruto);
-        e.baseAFP = round2(e.baseAFP + Math.min(row.bruto, nomina.AFP_TOPE));
-        e.baseSFS = round2(e.baseSFS + Math.min(row.bruto, nomina.SFS_TOPE));
+        e.baseAFP = round2(e.baseAFP + Math.min(row.salario, nomina.AFP_TOPE));
+        e.baseSFS = round2(e.baseSFS + Math.min(row.salario, nomina.SFS_TOPE));
         e.sfs = round2(e.sfs + row.sfs);
         e.afp = round2(e.afp + row.afp);
         e.isr = round2(e.isr + row.isr);

@@ -14,18 +14,19 @@ const SRL = 0.0120;          // Seguro de Riesgos Laborales, empleador (1.20%, b
 const AFP_PATRONAL = 0.0710; // AFP a cargo del empleador (7.10%)
 const INFOTEP = 0.0100;      // INFOTEP (1.00%, sobre salario total sin tope)
 
-// Aportes patronales TSS sobre el salario bruto de un empleado en un período.
-// Usa las mismas bases topadas que las retenciones del empleado.
-function calcAportesPatronales(bruto) {
-  const b = round2(Number(bruto) || 0);
-  const baseAFP = Math.min(b, AFP_TOPE);
-  const baseSFS = Math.min(b, SFS_TOPE);
+// Aportes patronales: bases TSS (SFS, AFP, SRL) sobre el salario base y
+// INFOTEP sobre el bruto total pagado del período.
+function calcAportesPatronales(salarioBase, brutoTotal) {
+  const base = round2(Number(salarioBase) || 0);
+  const total = round2(brutoTotal != null ? Number(brutoTotal) : base);
+  const baseAFP = Math.min(base, AFP_TOPE);
+  const baseSFS = Math.min(base, SFS_TOPE);
   return {
     sfsPatronal: round2(baseSFS * SFS_PATRONAL),
     iessl: round2(baseSFS * IESSL),
     srl: round2(baseSFS * SRL),
     afpPatronal: round2(baseAFP * AFP_PATRONAL),
-    infotep: round2(b * INFOTEP)
+    infotep: round2(total * INFOTEP)
   };
 }
 
