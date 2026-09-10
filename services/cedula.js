@@ -4,10 +4,10 @@ const { createCanvas, loadImage } = require('./canvas');
 const { pdfToImages, cropImageFile } = require('./pdf');
 const { recognizeDetailed } = require('./ocr');
 const { decodeFromImage, normalizeCedulaNumber } = require('./barcode');
-const { parseCedula, hasMrz, fieldIssues, looksLikeLabel } = require('./parse-cedula');
-const { reconcileFront } = require('./region');
+const { parseCedula, hasMrz, fieldIssues, looksLikeLabel, linesFromWords } = require('./parse-cedula');
+const { reconcileFront, reconcileBack } = require('./region');
 
-const SECOND_CHANCE_FIELDS = ['nombres', 'apellidos', 'lugar_nacimiento', 'profesion'];
+const SECOND_CHANCE_FIELDS = ['nombres', 'apellidos', 'lugar_nacimiento', 'profesion', 'tipo_sangre'];
 
 function isPdf(filePath) {
   return /\.pdf$/i.test(filePath);
@@ -25,7 +25,7 @@ function emptyFields() {
   return {
     cedula: '', nombres: '', apellidos: '', sexo: '',
     fecha_nacimiento: '', nacionalidad: '', lugar_nacimiento: '', estado_civil: '',
-    profesion: '',
+    profesion: '', tipo_sangre: '', ciudad: '',
     fecha_vencimiento: ''
   };
 }
@@ -89,8 +89,8 @@ async function ocrRightColumn(buffer, targetWidth) {
 
 function extractEstadoCivil(text) {
   const t = stripAccents(String(text || '')).toUpperCase();
-  const known = t.match(/UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO/);
-  if (known) return known[0].replace(/\s*\(?A\)?\s*$/i, '').trim();
+  const known = t.match(/UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA]/);
+  if (known) return known[0].replace(/\s+/g, ' ').trim();
   return '';
 }
 
@@ -108,9 +108,15 @@ async function decodeFirstBarcode(pages) {
 // corruptos; nunca los que ya traen un valor coherente.
 function needsRegion(key, value) {
   const v = String(value || '').trim();
-  if (!v) return true;
+  if (!v) {
+    // La ciudad (municipio) vive en el REVERSO; el frente es otra página y el
+    // recorte por región de frente no puede resolverla.
+    if (key === 'ciudad') return false;
+    return true;
+  }
   if (looksLikeLabel(v) && !(key === 'nacionalidad' && v.toUpperCase() === 'DOMINICANA')) return true;
   if (key === 'sexo') return !/^[FMO]$/.test(v);
+  if (key === 'tipo_sangre') return !/^(A|B|AB|O)[+-]$/.test(v);
   if (key === 'fecha_nacimiento' || key === 'fecha_vencimiento') {
     const m = v.match(/^\d{2}\/\d{2}\/\d{4}$/);
     if (!m) return true;
@@ -120,6 +126,10 @@ function needsRegion(key, value) {
   if (key === 'cedula') return !/^\d{3}-\d{7}-\d$/.test(v);
   if (key === 'nacionalidad') return v.toUpperCase() !== 'DOMINICANA';
   if (key === 'nombres' || key === 'apellidos') return /^\d/.test(v) || v.length < 4;
+  if (key === 'ciudad') {
+    // Nunca la resuelve el frente: el municipio vive en el reverso.
+    return false;
+  }
   return v.length < 1;
 }
 
@@ -129,8 +139,15 @@ function acceptRegionValue(key, oldValue, newValue) {
   if (!newValue) return false;
   const nv = String(newValue).trim();
   const ov = String(oldValue || '').trim();
+  if (key === 'tipo_sangre') {
+    return /^(A|B|AB|O)[+-]$/i.test(nv);
+  }
+  if (key === 'ciudad') {
+    if (/\d/.test(nv) || looksLikeLabel(nv)) return false;
+    return nv.length >= 3 && nv !== ov;
+  }
   if (key === 'estado_civil') {
-    return /UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO/i.test(nv);
+    return /UNION\s*LIBRE|UNION\s*CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA]/i.test(nv);
   }
   if (key === 'sexo') return /^[FMO]$/i.test(nv);
   if (key === 'fecha_vencimiento' || key === 'fecha_nacimiento') {
@@ -242,6 +259,27 @@ async function processFile(filePath) {
     }
   }
 
+  // Ciudad = municipio del REVERSO: si el pase de texto no la dio o quedó
+  // basura, releer el área bajo la etiqueta MUNICIPIO de la página trasera.
+  const ciudadBad = !fields.ciudad || looksLikeLabel(fields.ciudad);
+  if (ciudadBad && back && !ocrFailed) {
+    try {
+      const fixed = await reconcileBack({
+        ...back,
+        words: (ocrBack && ocrBack.words) || []
+      }, ['ciudad']);
+      if (fixed.ciudad && acceptRegionValue('ciudad', fields.ciudad, fixed.ciudad)) fields.ciudad = fixed.ciudad;
+    } catch (e) { /* noop */ }
+  }
+
+  // Normaliza el estado civil ANTES de los fallbacks: un valor con ruido OCR
+  // (p.ej. "SOLTERO 6") bloquea las pasadas de recuperación si no se limpia.
+  if (fields.estado_civil) {
+    const ec = stripAccents(String(fields.estado_civil)).toUpperCase().replace(/\s+/g, ' ');
+    const m = /\b(?:UNION\s+LIBRE|UNION\s+CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA])\b/.exec(ec);
+    if (!m) fields.estado_civil = '';
+  }
+
   if ((!fields.estado_civil || !fields.sexo) && front && !ocrFailed) {
     try {
       const right = await ocrRightColumn(front.buffer, 1400);
@@ -250,6 +288,23 @@ async function processFile(filePath) {
       if (!fields.sexo) {
         const m = right.text.match(/SEXO\s*[:.]?\s*([FMO])/i);
         if (m) fields.sexo = m[1].toUpperCase();
+      }
+    } catch (e) { /* noop */ }
+  }
+
+  if (!fields.estado_civil && front && !ocrFailed) {
+    // Última red: si ninguna pasada leyó el valor, aceptar la palabra de
+    // estado civil SOLO si aparece de forma inequívoca (una sola opción en la
+    // línea); en cédulas viejas la fila imprime todas las opciones sin marcar.
+    const enumRe = /\b(?:UNION\s+LIBRE|UNION\s+CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA])\b/;
+    try {
+      const ws = (ocrFront && ocrFront.words) || [];
+      for (const line of linesFromWords(ws)) {
+        const raw = stripAccents(String(line.text || ''));
+        const hits = raw.match(/\b(?:UNION\s+LIBRE|UNION\s+CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA])\b/gi);
+        if (!hits || hits.length !== 1) continue;
+        const m = raw.match(enumRe);
+        if (m) { fields.estado_civil = m[0].toUpperCase().replace(/\s+/g, ' '); break; }
       }
     } catch (e) { /* noop */ }
   }
@@ -263,8 +318,9 @@ async function processFile(filePath) {
     fields.nacionalidad = '';
   }
   if (fields.estado_civil) {
-    const ec = stripAccents(String(fields.estado_civil)).toUpperCase().trim().replace(/\s+/g, ' ');
-    if (!/^(UNION LIBRE|UNION CONSENSUAL|SOLTERO|CASADO|DIVORCIADO|VIUDO)$/.test(ec)) fields.estado_civil = '';
+    const ec = stripAccents(String(fields.estado_civil)).toUpperCase().replace(/\s+/g, ' ');
+    const m = /\b(?:UNION\s+LIBRE|UNION\s+CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA])\b/.exec(ec);
+    fields.estado_civil = m ? m[0] : '';
   }
   if (fields.sexo && !/^[FMO]$/.test(stripAccents(fields.sexo).toUpperCase())) fields.sexo = '';
   if (fields.fecha_vencimiento) {

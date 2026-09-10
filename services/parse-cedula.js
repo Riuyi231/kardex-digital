@@ -57,7 +57,9 @@ const LABEL_DEFS = [
   { key: 'estado_civil', labels: ['ESTADO CIVIL'] },
   { key: 'sexo', labels: ['SEXO'] },
   { key: 'profesion', labels: ['OCUPACION U OFICIO', 'OCUPACION Y OFICIO', 'PROFESION U OCUPACION', 'PROFESION U OFICIO', 'OCUPACION', 'PROFESION'] },
-  { key: 'fecha_vencimiento', labels: ['FECHA DE VENCIMIENTO', 'FECHA VENCIMIENTO', 'VIGENCIA HASTA', 'VIGENCIA'] }
+  { key: 'fecha_vencimiento', labels: ['FECHA DE VENCIMIENTO', 'FECHA VENCIMIENTO', 'VIGENCIA HASTA', 'VIGENCIA'] },
+  { key: 'tipo_sangre', labels: ['TIPO DE SANGRE', 'GRUPO SANGUINEO', 'GRUPO SANGRE', 'FACTOR RH'] },
+  { key: 'ciudad', labels: ['MUNICIPIO'] }
 ];
 
 function stripAccents(s) {
@@ -161,6 +163,13 @@ function extractDateText(text) {
   m = t.match(/\b(\d{1,2})\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(\d{4})\b/i);
   if (m) return `${pad2(m[1])}/${MESES[m[2].toUpperCase()]}/${m[3]}`;
   return '';
+}
+
+// Extrae el tipo de sangre (whitelist cerrada de 8 tipos). Si el cuadro está
+// vacío o el OCR no lee ninguno, devuelve '' (el campo queda vacío, nunca inventa).
+function bloodTypeFromText(text) {
+  const m = String(text || '').toUpperCase().replace(/\s+/g, '').match(/(?:AB|A|B|O)(?:\+|-)/);
+  return m ? m[0] : '';
 }
 
 function splitName(full) {
@@ -270,7 +279,10 @@ function bestLabelMatch(line) {
         if (findFuzzyIndex(n, lbl, maxErr) === 0) sim = 0.92;
         else if (n.length >= 3) sim = similarity(n, lbl);
       }
-      if (sim >= 0.75 && (!best || sim > best.sim || (sim === best.sim && lbl.length > best.lbl.length))) {
+      // Etiquetas largas son distintivas: soportan un umbral más tolerante con
+      // errores típicos de OCR (p.ej. "LAGARDE NACIMIENTO" ~ "LUGAR DE NACIMIENTO").
+      const th = lbl.length >= 12 ? 0.62 : 0.75;
+      if (sim >= th && (!best || sim > best.sim || (sim === best.sim && lbl.length > best.lbl.length))) {
         best = { key: def.key, sim, lbl, n };
       }
     }
@@ -288,17 +300,38 @@ function extractValueFromWords(words, key) {
     const w = words.filter((x) => x.conf >= 60).find((x) => /^[FMO]$/i.test(x.text));
     return w ? w.text.toUpperCase() : '';
   }
-  const good = words
-    .slice()
-    .sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0))
+  if (key === 'tipo_sangre') return bloodTypeFromText(words.map((x) => x.text).join(' '));
+  const kept = words
     .filter((w) => w.conf >= 40)
     .map((w) => {
       const bare = w.text.replace(/[^A-ZÁÉÍÓÚÜÑ]/gi, '').toUpperCase();
-      if (!bare) return '';
-      if (isLabelWord(bare) && !(key === 'nacionalidad' && (bare === 'DOMINICANA' || bare === 'DOMINICANO'))) return '';
-      return bare.length >= 2 && (bare.length >= 3 || KNOWN_SHORT.has(bare)) ? bare : '';
+      if (!bare) return null;
+      if (isLabelWord(bare) && !(key === 'nacionalidad' && (bare === 'DOMINICANA' || bare === 'DOMINICANO'))) return null;
+      // Vocabulario de otra columna: un valor de estado civil u oficio jamás es
+      // válido en un campo vecino (p.ej. nacionalidad="DOMINICANA SOLTERO" o
+      // lugar_nacimiento="... MAGUANA EMPLEADO").
+      if (key !== 'estado_civil' && (ESTADO_CIVIL_WORDS.has(bare) || (key === 'lugar_nacimiento' && PROFESION_WORDS.has(bare)))) return null;
+      if (bare.length >= 2 && (bare.length >= 3 || KNOWN_SHORT.has(bare))) return { w, bare };
+      return null;
     })
     .filter(Boolean);
+  if (!kept.length) return '';
+  // Agrupar en líneas (tolerancia vertical ≤7, la misma de linesFromWords) y
+  // ordenar dentro de cada línea por x0: ordenar solo por y0 baraja las palabras
+  // de una MISMA línea por el jitter del OCR (ej: "SAN JUAN DE LA MAGUANA" pasa a
+  // "LA MAGUANA DE SAN JUAN"). Con x0 primero los valores de línea única quedan
+  // en el orden visual correcto (izquierda → derecha).
+  const rows = [];
+  for (const item of kept.sort((a, b) => a.w.y0 - b.w.y0)) {
+    let placed = false;
+    for (const r of rows) {
+      const cy = r.reduce((s, x) => s + (x.w.y0 + x.w.y1) / 2, 0) / r.length;
+      if (Math.abs(item.w.y0 - cy) <= 7) { r.push(item); placed = true; break; }
+    }
+    if (!placed) rows.push([item]);
+  }
+  for (const r of rows) r.sort((a, b) => a.w.x0 - b.w.x0);
+  const good = rows.flat().map((x) => x.bare);
   if (!good.length) return '';
   const max = key === 'nombres' || key === 'apellidos' ? 8 : key === 'lugar_nacimiento' ? 6 : 4;
   return good.slice(0, max).join(' ');
@@ -335,7 +368,10 @@ function cleanInlineValue(rest, key) {
     const m = rest.match(/[FMO]/i);
     return m ? m[0].toUpperCase() : '';
   }
-  return cleanAlphaValue(rest);
+  if (key === 'tipo_sangre') {
+    return bloodTypeFromText(rest);
+  }
+  return cleanAlphaValue(rest, key);
 }
 
 // Palabras de rótulo que si aparecen dentro de un valor indican que el recorte
@@ -349,6 +385,15 @@ const VALUE_VETO_WORDS = new Set([
   'TITULAR', 'NUMERO', 'MASCULINO', 'FEMENINO', 'FIRMA', 'REGISTRO', 'ANTERIOR',
   'MUNICIPIO', 'COLEGIO', 'DIRECCION', 'RESIDENCIA', 'RECINTO', 'PADRE', 'MADRE',
   'PROVINCIA', 'SECTOR', 'UBICACION', 'NONBRE', 'APELLI', 'APELLDOS'
+]);
+
+const ESTADO_CIVIL_WORDS = new Set(['SOLTERO', 'SOLTERA', 'CASADO', 'CASADA', 'DIVORCIADO', 'DIVORCIADA', 'VIUDO', 'VIUDA', 'UNION', 'LIBRE']);
+const PROFESION_WORDS = new Set([
+  'EMPLEADO', 'EMPLEADA', 'ESTUDIANTE', 'PRIVADO', 'PRIVADA', 'PUBLICO', 'PUBLICA',
+  'COMERCIANTE', 'CONDUCTOR', 'CONDUTOR', 'ELECTRICISTA', 'TECNICO', 'TECNICA',
+  'LICENCIADO', 'LICENCIADA', 'ABOGADO', 'ABOGADA', 'DOMESTICO', 'DOMESTICA',
+  'OFICINISTA', 'DENTISTA', 'CONTADOR', 'PROFESOR', 'PROFESORA', 'MAESTRO',
+  'INGENIERO', 'INGENIERA', 'ENFERMERA', 'FARMACEUTICO'
 ]);
 
 function isLabelWord(w) {
@@ -417,22 +462,35 @@ function extractLabeledFields(front, back) {
         );
         let xMin = Math.max(0, labelLine.x0 - 15);
         let xMax;
-        if (twoColumn && side === 'left') {
-          const wide = labelLine.x0 + Math.max(150, pageWidth * 0.3);
-          xMax = Math.min(midX - 4, Math.max(labelLine.x1 + 30, wide));
-        } else if (twoColumn && side === 'right') {
-          xMin = Math.max(0, Math.max(midX, labelLine.x0 - 15));
+        if (twoColumn && side === 'right') {
+          xMin = Math.max(xMin, midX);
           xMax = Math.min(pageWidth, Math.max(labelLine.x1 + 120, labelLine.x0 + 150));
+        } else if (twoColumn && side === 'left') {
+          // SIN techo por midX: en cédulas recortadas el centro puede caer dentro
+          // de la columna izquierda y cortar valores como "SAN JUAN DE LA MAGUANA"
+          // en "SAN". La otra columna se elimina por gutter entre palabras.
+          xMax = pageWidth;
         } else {
           xMax = Math.min(pageWidth, labelLine.x0 + Math.max(150, pageWidth * 0.4));
         }
-        const region = page.words.filter((w) =>
+        let region = page.words.filter((w) =>
           !labelWords.has(w) &&
           w.y0 >= labelLine.y1 - 12 &&
           w.y0 < bottomY &&
           w.x0 >= xMin &&
           w.x0 <= xMax
         );
+        if (twoColumn && side === 'left' && region.length > 1) {
+          // Mismo criterio de columna que linesFromWords: separar por el salto
+          // y conservar solo el primer racimo (la columna de la etiqueta).
+          const cgap = Math.max(90, pageWidth * 0.05);
+          const sortedBand = region.slice().sort((a, b) => a.x0 - b.x0);
+          let cut = Infinity;
+          for (let k = 1; k < sortedBand.length; k++) {
+            if (sortedBand[k].x0 - sortedBand[k - 1].x1 > cgap) { cut = sortedBand[k - 1].x1 + 4; break; }
+          }
+          if (cut !== Infinity) region = region.filter((w) => w.x0 <= cut);
+        }
         value = extractValueFromWords(region, m.key);
       }
       if (value && !result[m.key]) result[m.key] = value;
@@ -480,12 +538,18 @@ function findLabelLine(lines, def) {
   return best;
 }
 
-function cleanAlphaValue(raw) {
+function cleanAlphaValue(raw, key) {
   const tokens = stripAccents(String(raw || ''))
     .toUpperCase()
     .split(/\s+/)
     .map((t) => t.replace(/[^A-Z0-9]/g, ''))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((t) => {
+      if (!key || key === 'estado_civil') return true;
+      if (ESTADO_CIVIL_WORDS.has(t)) return false;
+      if (key === 'lugar_nacimiento' && PROFESION_WORDS.has(t)) return false;
+      return true;
+    });
   let best = [];
   let cur = [];
   for (const t of tokens) {
@@ -644,7 +708,15 @@ function parseMrz(frontText, backText) {
     if (secondary) result.nombres = secondary;
   }
 
-  const dm = block.match(/(\d{6})\d?([MF])(\d{6})\d?/i);
+  // Fecha de nacimiento + sexo + vencimiento del MRZ2. Las pasadas de OCR suelen
+  // insertar basura entre el dígito de control y el género o el vencimiento
+  // (p.ej. "8008024mM4208022DO0MS..."): se tolera hasta 8 caracteres de ruido
+  // y se toma el primer encaje coherente por línea.
+  let dm = null;
+  for (const l of mrzLines) {
+    const m = l.match(/(\d{6}).{0,8}?([MF]).{0,8}?(\d{6})/i);
+    if (m) { dm = m; break; }
+  }
   if (dm) {
     result.sexo = dm[2].toUpperCase();
     const birth = mrzDate(dm[1], 'birth');
@@ -667,7 +739,7 @@ function fieldIssues(fields) {
   const now = new Date();
   const year = now.getFullYear();
   for (const k of ['cedula', 'nombres', 'apellidos', 'sexo', 'fecha_nacimiento', 'nacionalidad',
-    'lugar_nacimiento', 'estado_civil', 'profesion', 'fecha_vencimiento']) {
+    'lugar_nacimiento', 'estado_civil', 'profesion', 'tipo_sangre', 'ciudad', 'fecha_vencimiento']) {
     const v = String(fields[k] || '').trim();
     if (!v) {
       issues[k] = 'vacio';
@@ -710,6 +782,31 @@ function normalizeInput(x) {
   return { text: (x && x.text) ? x.text : '', words: (x && x.words) || [] };
 }
 
+// Complementa palabras de nombres/apellidos cuyas letras el OCR cortó en el
+// MRZ usando el frente (que imprime el nombre completo): "PATRIC" → "PATRICIA".
+function completeMrzNames(fields, front) {
+  if (!front || !front.words || !Array.isArray(front.words)) return;
+  const pool = [];
+  for (const w of front.words) {
+    if (w.conf < 60) continue;
+    const b = stripAccents(w.text).toUpperCase().replace(/[^A-Z]/g, '');
+    if (b.length >= 5) pool.push(b);
+  }
+  if (!pool.length) return;
+  const extend = (field) => {
+    if (!fields[field]) return;
+    const fixed = fields[field].split(/\s+/).map((tok) => {
+      const n = stripAccents(tok).toUpperCase().replace(/[^A-Z]/g, '');
+      if (n.length < 4) return tok;
+      const cands = pool.filter((p) => p.length > n.length && p.length <= n.length + 6 && p.startsWith(n) && n.length >= 4);
+      return cands.length === 1 ? cands[0] : tok;
+    });
+    fields[field] = fixed.join(' ');
+  };
+  extend('nombres');
+  extend('apellidos');
+}
+
 function parseCedula(frontInput, backInput) {
   const front = normalizeInput(frontInput);
   const back = normalizeInput(backInput);
@@ -723,7 +820,7 @@ function parseCedula(frontInput, backInput) {
   const fields = {
     cedula: '', nombres: '', apellidos: '', sexo: '',
     fecha_nacimiento: '', nacionalidad: '', lugar_nacimiento: '', estado_civil: '',
-    profesion: '',
+    profesion: '', tipo_sangre: '', ciudad: '',
     fecha_vencimiento: ''
   };
 
@@ -743,7 +840,11 @@ function parseCedula(frontInput, backInput) {
     }
   }
 
-  if (fields.estado_civil) fields.estado_civil = fields.estado_civil.replace(/\s*\(?A\)?\s*$/i, '').trim();
+  if (fields.estado_civil) {
+    const ec = stripAccents(String(fields.estado_civil)).toUpperCase().replace(/\s+/g, ' ');
+    const m = /\b(?:UNION\s+LIBRE|UNION\s+CONSENSUAL|SOLTER[OA]|CASAD[OA]|DIVORCIAD[OA]|VIUD[OA])\b/.exec(ec);
+    fields.estado_civil = m ? m[0] : '';
+  }
 
   for (const key of ['fecha_nacimiento', 'fecha_vencimiento']) {
     if (fields[key]) fields[key] = normalizeDate(fields[key]);
@@ -773,6 +874,8 @@ function parseCedula(frontInput, backInput) {
       if (namesBad(fields.apellidos) && mrz.apellidos) fields.apellidos = mrz.apellidos;
     }
   }
+
+  completeMrzNames(fields, front);
 
   return fields;
 }
